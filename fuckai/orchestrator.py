@@ -67,17 +67,17 @@ class Orchestrator:
             return self._fail(converter_id, objective, payload, f"[变换失败] {e}", verbose, prompt)
 
         if verbose:
-            print("\n  ── 最终 prompt " + "─" * 46)
+            print("\n  ── 攻击prompt " + "─" * 46)
             self._print_preview(prompt)
 
-        # 3) 发送给目标模型
+        # 3) 发送给被攻击模型
         try:
             response = self.target_client.chat([{"role": "user", "content": prompt}])
         except Exception as e:
-            return self._fail(converter_id, objective, payload, f"[目标调用失败] {e}", verbose, prompt)
+            return self._fail(converter_id, objective, payload, f"[被攻击模型调用失败] {e}", verbose, prompt)
 
         if verbose:
-            print("\n  ── 目标模型回复 " + "─" * 42)
+            print("\n  ── 被攻击模型回复 " + "─" * 42)
             self._print_preview(response)
 
         # 4) 评分
