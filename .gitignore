@@ -1,0 +1,15 @@
+# 个人数据：绝不上传
+config.yaml
+fuckai.db
+*.db
+*.sqlite3
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 运行产物
+outputs/
+*.log
