@@ -19,7 +19,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 # 更新时被覆盖的内容（用户数据不在其中）
-UPDATE_ITEMS = ("datasets", "fuckai", "run.py", "config_example.yaml", "README.md")
+UPDATE_ITEMS = ("datasets", "fuckai", "web", "run.py", "web.py", "config_example.yaml", "README.md")
 # 更新时绝不触碰的用户数据
 PROTECTED = {"config.yaml", "fuckai.db"}
 
