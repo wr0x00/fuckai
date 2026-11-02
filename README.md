@@ -134,4 +134,18 @@ python run.py
 - 帮助:显示帮助信息。
 - 从 GitHub 更新:从 GitHub 更新最新版本。
 - 退出:退出程序。
+
+### Web 界面
+
+除命令行外，本程序同时提供一套 Web 界面（FastAPI + Vue 3，前后端不分离，单进程同时提供接口和页面）。
+
+```
+pip install fastapi uvicorn
+python web.py                 # 默认 http://127.0.0.1:8000
+python web.py --port 9000     # 指定端口
+```
+
+页面包含概览、弹药库、攻击测试、测试记录、模型配置、从 GitHub 更新六个模块。攻击测试通过 SSE 流式返回结果，边跑边出进度；测试记录可展开查看原始 prompt、模型回复与判定理由，并导出 JSON/CSV 报告。
+
+Web 界面与命令行共用同一份 `config.yaml` 和 `fuckai.db`，两边数据互通。
 ```
