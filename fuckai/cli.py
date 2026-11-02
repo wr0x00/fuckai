@@ -39,7 +39,11 @@ class CLI:
     @staticmethod
     def _ask(prompt: str, default: str = "") -> str:
         suffix = f" [回车={default}]" if default else ""
-        val = input(f"{prompt}{suffix}: ").strip()
+        try:
+            val = input(f"{prompt}{suffix}: ").strip()
+        except EOFError:
+            print()
+            return default
         return val or default
 
     def _orch(self) -> Orchestrator:
@@ -317,10 +321,16 @@ class CLI:
         if not repo:
             print("  [!] 未输入地址，已取消")
             return
+        # 先校验地址格式，避免下载到一半才发现地址写错
+        try:
+            updater.validate_repo_url(repo)
+        except ValueError as e:
+            print(f"  [x] {e}")
+            return
+        updater.set_repo_url(repo)
         print(f"  正在从 {repo} 下载最新代码 ...")
         try:
             summary = updater.update(repo)
-            updater.set_repo_url(repo)
             print(f"  [ok] {summary}")
             print("  [!] 更新完成，重启程序后生效")
         except Exception as e:
