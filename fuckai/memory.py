@@ -6,6 +6,7 @@
 """
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -28,47 +29,61 @@ class Memory:
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
-        self.conn.executescript(_SCHEMA)
-        # 兼容 v1 老库：补 payload 列
-        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(attacks)")}
-        if "payload" not in cols:
-            self.conn.execute("ALTER TABLE attacks ADD COLUMN payload TEXT")
+        # Web 层会把每次请求丢到线程池执行，同一个连接可能被不同线程用到，
+        # 所以关掉 sqlite3 的线程亲和检查，并用自己的锁保证串行访问。
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._lock = threading.RLock()
+        with self._lock:
+            self.conn.executescript(_SCHEMA)
+            # 兼容 v1 老库：补 payload 列
+            cols = {row[1] for row in self.conn.execute("PRAGMA table_info(attacks)")}
+            if "payload" not in cols:
+                self.conn.execute("ALTER TABLE attacks ADD COLUMN payload TEXT")
             self.conn.commit()
 
     def save(self, record: dict) -> int:
-        cur = self.conn.execute(
-            "INSERT INTO attacks (ts, converter, objective, payload, prompt, response, success, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                record.get("ts") or datetime.now().isoformat(timespec="seconds"),
-                record["converter"],
-                record["objective"],
-                record.get("payload", ""),
-                record["prompt"],
-                record["response"],
-                int(record["success"]),
-                record.get("reason", ""),
-            ),
-        )
-        self.conn.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT INTO attacks (ts, converter, objective, payload, prompt, response, success, reason) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.get("ts") or datetime.now().isoformat(timespec="seconds"),
+                    record["converter"],
+                    record["objective"],
+                    record.get("payload", ""),
+                    record["prompt"],
+                    record["response"],
+                    int(record["success"]),
+                    record.get("reason", ""),
+                ),
+            )
+            self.conn.commit()
+            return cur.lastrowid
 
     def recent(self, limit: int = 20) -> list[dict]:
-        cur = self.conn.execute(
-            "SELECT id, ts, converter, payload, objective, success, reason FROM attacks "
-            "ORDER BY id DESC LIMIT ?", (limit,),
-        )
-        return [dict(zip(("id", "ts", "converter", "payload", "objective", "success", "reason"), row))
-                for row in cur.fetchall()]
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT id, ts, converter, payload, objective, success, reason FROM attacks "
+                "ORDER BY id DESC LIMIT ?", (limit,),
+            )
+            return [dict(zip(("id", "ts", "converter", "payload", "objective", "success", "reason"), row))
+                    for row in cur.fetchall()]
 
     def all(self) -> list[dict]:
-        cur = self.conn.execute(
-            "SELECT id, ts, converter, payload, objective, prompt, response, success, reason "
-            "FROM attacks ORDER BY id"
-        )
-        keys = ("id", "ts", "converter", "payload", "objective", "prompt", "response", "success", "reason")
-        return [dict(zip(keys, row)) for row in cur.fetchall()]
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT id, ts, converter, payload, objective, prompt, response, success, reason "
+                "FROM attacks ORDER BY id"
+            )
+            keys = ("id", "ts", "converter", "payload", "objective", "prompt", "response", "success", "reason")
+            return [dict(zip(keys, row)) for row in cur.fetchall()]
+
+    def clear(self) -> int:
+        """清空全部记录，返回删除行数。"""
+        with self._lock:
+            cur = self.conn.execute("DELETE FROM attacks")
+            self.conn.commit()
+            return cur.rowcount
 
     def export_json(self, path: str) -> int:
         records = self.all()
@@ -89,4 +104,5 @@ class Memory:
         return len(records)
 
     def close(self):
-        self.conn.close()
+        with self._lock:
+            self.conn.close()

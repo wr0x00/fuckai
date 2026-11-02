@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fuckai — LLM 注入攻击测试台</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <!-- ============ 左侧导航 ============ -->
+  <aside class="nav">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.5 4 6.2v6.3c0 4.6 3.3 8.4 8 9 4.7-.6 8-4.4 8-9V6.2L12 2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.6 12.1 2.3 2.4 4.6-4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">fuckai</div>
+        <div class="brand-sub">LLM 注入攻击测试台</div>
+      </div>
+    </div>
+
+    <nav class="nav-list">
+      <button v-for="it in navItems" :key="it.key" class="nav-item" :class="{active: page===it.key}"
+              @click="page=it.key" :title="it.label">
+        <span class="nav-ico" v-html="it.icon"></span>
+        <span class="nav-label">{{ it.label }}</span>
+        <span class="nav-badge" v-if="it.badge && it.badge()">{{ it.badge() }}</span>
+      </button>
+    </nav>
+
+    <div class="nav-foot">
+      <div class="conn" :class="connState.cls">
+        <span class="dot"></span>
+        <span class="conn-text">{{ connState.text }}</span>
+      </div>
+      <button class="icon-btn" @click="toggleTheme" :title="dark ? '切换到浅色' : '切换到深色'">
+        <svg v-if="!dark" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <svg v-else viewBox="0 0 24 24" fill="none"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============ 主区域 ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">
+        <span class="crumb-main">{{ currentNav.label }}</span>
+        <span class="crumb-sub" v-if="currentNav.sub">{{ currentNav.sub }}</span>
+      </div>
+      <div class="topbar-actions">
+        <span class="pill" :class="connState.cls"><span class="dot"></span>{{ connState.text }}</span>
+        <button class="btn btn-ghost" @click="loadAll">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4.5h-4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          刷新
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ---------- 概览 ---------- -->
+      <section v-show="page==='dash'" class="page">
+        <div class="grid-tiles">
+          <div class="tile">
+            <div class="tile-label">本地话题</div>
+            <div class="tile-value">{{ totalObjectives }}</div>
+            <div class="tile-foot">{{ arsenal.local_groups.length }} 个数据集分组</div>
+          </div>
+          <div class="tile">
+            <div class="tile-label">提示词模板</div>
+            <div class="tile-value">{{ arsenal.jailbreaks.length }}</div>
+            <div class="tile-foot">越狱话术 · DAN / dev_mode 等</div>
+          </div>
+          <div class="tile">
+            <div class="tile-label">执行器话术</div>
+            <div class="tile-value">{{ arsenal.executors.length }}</div>
+            <div class="tile-foot">多轮 / 注入执行器</div>
+          </div>
+          <div class="tile tile-accent">
+            <div class="tile-label">历史成功率</div>
+            <div class="tile-value">{{ records.rate }}<span class="unit">%</span></div>
+            <div class="tile-foot">共 {{ records.total }} 条测试记录</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2 class="card-title">攻击管线</h2>
+            <span class="card-note">话题 → 提示词模板 → 变换器 → 目标模型 → 评分 → 记录</span>
+          </div>
+          <div class="flow">
+            <div class="flow-step" v-for="(s,i) in pipeline" :key="s.t">
+              <div class="flow-ico" v-html="s.icon"></div>
+              <div class="flow-body">
+                <div class="flow-t">{{ s.t }}</div>
+                <div class="flow-d">{{ s.d }}</div>
+              </div>
+              <svg v-if="i<pipeline.length-1" class="flow-arrow" viewBox="0 0 24 24" fill="none"><path d="M5 12h13m0 0-4.5-4.5M18 12l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-head"><h2 class="card-title">模型连接</h2>
+              <button class="btn btn-ghost btn-sm" @click="testConn" :disabled="busy.conn">
+                {{ busy.conn ? '检测中…' : '测试连接' }}
+              </button>
+            </div>
+            <div class="conn-row" v-for="m in connModels" :key="m.key">
+              <div class="conn-row-main">
+                <span class="badge" :class="m.ok==null ? 'badge-idle' : (m.ok ? 'badge-ok' : 'badge-err')">
+                  {{ m.ok==null ? '未检测' : (m.ok ? '正常' : '失败') }}
+                </span>
+                <span class="conn-row-name">{{ m.label }}</span>
+                <span class="mono muted">{{ m.model || '未配置模型' }}</span>
+              </div>
+              <div class="conn-row-sub mono" v-if="m.error || m.reply">{{ m.error || m.reply }}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2 class="card-title">最近记录</h2>
+              <button class="btn btn-ghost btn-sm" @click="page='records'">查看全部</button>
+            </div>
+            <div class="mini-list" v-if="records.items.length">
+              <div class="mini-item" v-for="r in records.items.slice(0,6)" :key="r.id">
+                <span class="mark" :class="r.success ? 'mark-true' : 'mark-false'">{{ r.success ? 'T' : 'F' }}</span>
+                <span class="mini-obj">{{ r.objective }}</span>
+                <span class="mono muted mini-conv">{{ r.converter }}</span>
+              </div>
+            </div>
+            <div class="empty" v-else>暂无测试记录</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 弹药库 ---------- -->
+      <section v-show="page==='arsenal'" class="page">
+        <div class="toolbar">
+          <div class="seg" role="tablist">
+            <button v-for="t in arsenalTabs" :key="t.key" class="seg-item" :class="{on: arsenalTab===t.key}"
+                    @click="arsenalTab=t.key">{{ t.label }}<span class="seg-n">{{ t.count() }}</span></button>
+          </div>
+          <input class="input search" v-model="arsenalQuery" placeholder="搜索名称或内容…">
+        </div>
+
+        <!-- 变换器 -->
+        <div class="card" v-show="arsenalTab==='conv'">
+          <div class="card-head"><h2 class="card-title">变换器</h2>
+            <span class="card-note">编码 / 改写手法，决定 prompt 如何变形</span></div>
+          <div class="conv-grid">
+            <div class="conv" v-for="c in filteredConverters" :key="c.id">
+              <code class="conv-id">{{ c.id }}</code>
+              <span class="conv-label">{{ c.label }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 模板 -->
+        <div class="card" v-show="arsenalTab==='tpl'">
+          <div class="card-head"><h2 class="card-title">{{ arsenalTab==='tpl' ? '提示词模板与执行器话术' : '' }}</h2>
+            <span class="card-note">点击查看模板全文</span></div>
+          <div class="tpl-grid">
+            <div class="tpl" v-for="p in filteredTemplates" :key="p.kind + p.name">
+              <div class="tpl-top">
+                <span class="tpl-name">{{ p.name }}</span>
+                <span class="tag" :class="p.kind==='jailbreak' ? 'tag-jb' : 'tag-ex'">{{ p.kind==='jailbreak'?'越狱':'执行器' }}</span>
+              </div>
+              <div class="tpl-src mono muted">{{ p.source }}</div>
+              <pre class="tpl-body">{{ p.value }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- 话题集 -->
+        <div class="card" v-show="arsenalTab==='obj'">
+          <div class="card-head"><h2 class="card-title">本地话题集</h2>
+            <span class="card-note">来自 datasets/seed_datasets/local</span></div>
+          <div class="grp-list">
+            <details class="grp" v-for="g in arsenal.local_groups" :key="g.key">
+              <summary>
+                <span class="grp-key mono">{{ g.key }}</span>
+                <span class="grp-intro">{{ g.intro }}</span>
+                <span class="grp-count">{{ g.count }} 条</span>
+              </summary>
+              <div class="grp-items">
+                <div class="grp-item" v-for="(it,i) in g.items" :key="i">
+                  <span class="mono muted grp-idx">{{ i+1 }}</span>
+                  <span>{{ it.value }}</span>
+                  <span class="tag tag-harm" v-if="it.harm">{{ it.harm }}</span>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 攻击 ---------- -->
+      <section v-show="page==='attack'" class="page">
+        <div class="atk-layout">
+          <div class="card atk-config">
+            <div class="card-head"><h2 class="card-title">攻击配置</h2></div>
+
+            <label class="field">
+              <span class="field-label">话题来源</span>
+              <select class="input" v-model="atk.objective_group" @change="atk.sample_size = Math.min(atk.sample_size, 50)">
+                <option value="">手动输入（下方）</option>
+                <option v-for="g in arsenal.local_groups" :key="g.key" :value="g.key">{{ g.key }} — {{ g.count }} 条</option>
+              </select>
+            </label>
+
+            <label class="field" v-if="!atk.objective_group">
+              <span class="field-label">测试话题（每行一条）</span>
+              <textarea class="input" rows="5" v-model="atk.manual"></textarea>
+            </label>
+
+            <label class="field" v-else>
+              <span class="field-label">抽取数量</span>
+              <div class="row">
+                <input class="input" type="number" min="1" max="500" v-model.number="atk.sample_size">
+                <label class="check"><input type="checkbox" v-model="atk.use_all"> 全部使用</label>
+              </div>
+            </label>
+
+            <div class="field">
+              <span class="field-label">变换器<span class="muted"> · {{ atk.converter_ids.length }} 个</span></span>
+              <div class="chipbox">
+                <button class="chip" v-for="c in arsenal.converters" :key="c.id"
+                        :class="{on: atk.converter_ids.includes(c.id)}"
+                        @click="toggleConv(c.id)">{{ c.id }}</button>
+              </div>
+            </div>
+
+            <label class="field">
+              <span class="field-label">提示词模板</span>
+              <select class="input" v-model="atk.payload_name">
+                <option value="">不包装（话题直接发送）</option>
+                <optgroup label="越狱模板">
+                  <option v-for="p in arsenal.jailbreaks" :key="p.name" :value="p.name">{{ p.name }}</option>
+                </optgroup>
+                <optgroup label="执行器话术">
+                  <option v-for="p in arsenal.executors" :key="p.name" :value="p.name">{{ p.name }}</option>
+                </optgroup>
+              </select>
+            </label>
+
+            <div class="atk-actions">
+              <button class="btn btn-primary" @click="runAttack" :disabled="running">
+                {{ running ? '执行中…' : '开始攻击' }}
+              </button>
+              <button class="btn btn-ghost" @click="resetRun" :disabled="!running">停止</button>
+              <span class="muted" v-if="planTotal">计划 {{ planTotal }} 次请求</span>
+            </div>
+          </div>
+
+          <div class="card atk-stream">
+            <div class="card-head">
+              <h2 class="card-title">执行结果</h2>
+              <div class="progress-wrap" v-if="running">
+                <div class="progress"><div class="progress-bar" :style="{width: progress+'%'}"></div></div>
+                <span class="mono muted">{{ doneCount }}/{{ planTotal }}</span>
+              </div>
+              <span class="chip chip-static" v-else-if="lastSummary">
+                成功率 <b>{{ lastSummary.rate }}%</b> · {{ lastSummary.success }}/{{ lastSummary.total }}
+              </span>
+            </div>
+            <div class="stream" ref="streamEl">
+              <div class="empty" v-if="!runRows.length">尚未执行。选择左侧配置后点击「开始攻击」。</div>
+              <div class="row-item" v-for="r in runRows" :key="r.id">
+                <span class="mark" :class="r.success ? 'mark-true' : 'mark-false'">{{ r.success ? 'T' : 'F' }}</span>
+                <div class="row-main">
+                  <div class="row-t">{{ r.objective }}</div>
+                  <div class="row-meta mono muted">
+                    {{ r.converter }}<span v-if="r.payload"> · {{ r.payload }}</span> · {{ r.ts }}
+                  </div>
+                  <details class="row-detail">
+                    <summary>查看 prompt / 回复 / 判定</summary>
+                    <div class="kv"><b>最终 prompt</b><pre>{{ r.prompt || '（无）' }}</pre></div>
+                    <div class="kv"><b>模型回复</b><pre>{{ r.response || '（无）' }}</pre></div>
+                    <div class="kv"><b>判定理由</b><p>{{ r.reason }}</p></div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 记录 ---------- -->
+      <section v-show="page==='records'" class="page">
+        <div class="toolbar">
+          <div class="seg">
+            <button class="seg-item" :class="{on: recFilter==='all'}" @click="recFilter='all'">全部</button>
+            <button class="seg-item" :class="{on: recFilter==='true'}" @click="recFilter='true'">成功</button>
+            <button class="seg-item" :class="{on: recFilter==='false'}" @click="recFilter='false'">被拒绝</button>
+          </div>
+          <input class="input search" v-model="recQuery" placeholder="搜索话题或变换器…">
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" @click="exportReport('json')">导出 JSON</button>
+          <button class="btn btn-ghost" @click="exportReport('csv')">导出 CSV</button>
+          <button class="btn btn-ghost danger" @click="clearRecords">清空</button>
+        </div>
+
+        <div class="card">
+          <table class="tbl" v-if="filteredRecords.length">
+            <thead>
+              <tr><th style="width:56px">结果</th><th>话题</th><th style="width:130px">变换器</th>
+                  <th style="width:150px">模板</th><th style="width:170px">时间</th><th style="width:60px"></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in filteredRecords" :key="r.id">
+                <td><span class="mark" :class="r.success ? 'mark-true' : 'mark-false'">{{ r.success ? 'T' : 'F' }}</span></td>
+                <td class="cell-obj" :title="r.objective">{{ r.objective }}</td>
+                <td class="mono">{{ r.converter }}</td>
+                <td class="mono muted">{{ r.payload || '—' }}</td>
+                <td class="mono muted">{{ r.ts }}</td>
+                <td><button class="icon-btn" @click="toggleExpand(r.id)" :title="expandId===r.id?'收起':'展开'">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button></td>
+              </tr>
+              <tr v-if="expandId" class="expand-row">
+                <td colspan="6">
+                  <div class="kv" v-if="expandedRecord">
+                    <b>攻击 prompt</b><pre>{{ expandedRecord.prompt }}</pre>
+                    <b>模型回复</b><pre>{{ expandedRecord.response }}</pre>
+                    <b>判定理由</b><p>{{ expandedRecord.reason }}</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty" v-else>没有匹配的记录</div>
+        </div>
+      </section>
+
+      <!-- ---------- 配置 ---------- -->
+      <section v-show="page==='settings'" class="page">
+        <div class="card">
+          <div class="card-head"><h2 class="card-title">攻击模型</h2><span class="card-note">改写 prompt 并兼职评分</span></div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Base URL</span>
+              <input class="input" v-model="cfg.attack_base_url" placeholder="https://api.example.com/v1"></label>
+            <label class="field"><span class="field-label">API Key</span>
+              <input class="input" type="password" v-model="cfg.attack_api_key" placeholder="sk-…"></label>
+            <label class="field"><span class="field-label">模型名称</span>
+              <input class="input" v-model="cfg.attack_model" placeholder="gpt-4o-mini"></label>
+            <label class="field"><span class="field-label">Temperature</span>
+              <input class="input" type="number" step="0.1" v-model.number="cfg.attack_temperature"></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2 class="card-title">被攻击模型</h2><span class="card-note">接收最终 prompt 的目标</span></div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Base URL</span>
+              <input class="input" v-model="cfg.target_base_url" placeholder="https://api.example.com/v1"></label>
+            <label class="field"><span class="field-label">API Key</span>
+              <input class="input" type="password" v-model="cfg.target_api_key" placeholder="sk-…"></label>
+            <label class="field"><span class="field-label">模型名称</span>
+              <input class="input" v-model="cfg.target_model" placeholder="gpt-4o-mini"></label>
+            <label class="field"><span class="field-label">Temperature</span>
+              <input class="input" type="number" step="0.1" v-model.number="cfg.target_temperature"></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2 class="card-title">测试参数</h2></div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">超时（秒）</span>
+              <input class="input" type="number" v-model.number="cfg.timeout"></label>
+            <label class="field"><span class="field-label">max_tokens</span>
+              <input class="input" type="number" v-model.number="cfg.max_tokens"></label>
+            <label class="field"><span class="field-label">变体数</span>
+              <input class="input" type="number" v-model.number="cfg.variation_count"></label>
+            <label class="field"><span class="field-label">默认抽样数</span>
+              <input class="input" type="number" v-model.number="cfg.sample_size"></label>
+          </div>
+          <div class="form-foot">
+            <button class="btn btn-primary" @click="saveConfig" :disabled="busy.save">{{ busy.save ? '保存中…' : '保存配置' }}</button>
+            <span class="muted">保存到 config.yaml，不会被「从 GitHub 更新」覆盖</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 更新 ---------- -->
+      <section v-show="page==='update'" class="page">
+        <div class="card upd-card">
+          <div class="card-head"><h2 class="card-title">从 GitHub 更新</h2></div>
+          <p class="upd-desc">
+            从仓库拉取最新源码并覆盖 <code class="mono">datasets/</code>、<code class="mono">fuckai/</code>、
+            <code class="mono">run.py</code>、<code class="mono">README.md</code> 等代码目录，
+            你的 <code class="mono">config.yaml</code> 与 <code class="mono">fuckai.db</code> 会被保留。
+          </p>
+          <label class="field">
+            <span class="field-label">仓库地址</span>
+            <input class="input" v-model="upd.repo_url" placeholder="https://github.com/用户名/仓库">
+          </label>
+          <div class="form-foot">
+            <button class="btn btn-primary" @click="doUpdate" :disabled="busy.update">
+              {{ busy.update ? '更新中…' : '立即更新' }}
+            </button>
+            <span class="muted">更新完成后重启服务生效</span>
+          </div>
+          <div class="upd-result" v-if="upd.result">
+            <div class="upd-result-t" :class="upd.ok ? 'ok' : 'err'">{{ upd.ok ? '更新完成' : '更新失败' }}</div>
+            <pre class="mono">{{ upd.result }}</pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="toast" v-if="toast" :class="toast.cls">{{ toast.msg }}</div>
+</div>
+
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
