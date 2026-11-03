@@ -5,7 +5,7 @@
 
 FUCKAI一款针对大模型LLM自身的安全检测工具，用户可对`已授权`的LLM进行安全测试。
 ## 效果预览
-<video src="https://github.com/wr0x00/fuckai/asset/Video_Project.mp4" title="asset/Video_Project.mp4"></video>" controls muted width="100%"></video>
+<video src="asset/Video_Project.mp4" controls muted width="100%"></video>
 
 ### 一键部署：
 -   安装
