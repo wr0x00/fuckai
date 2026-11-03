@@ -1,49 +1,36 @@
-# FUCKAI 新一代LLM注入攻击工具
+# FUCKAI 新一代LLM自身的安全检测工具
 > 此项目成立于2026.11。目前llm自身安全研究领域处于方兴未艾时期，关于security for ai大部分研究停留在论文阶段，工程化应用较少。已公布的llm自身漏洞种类原理较浅(主要以提示词注入为主)，还未爆出长链路、通用面广、深度高、危害性高的漏洞类型。
 
 > 本项目旨在吸收全网优秀llm攻击手法，长久更新，力求构建一个体系化开源版本的llm自身安全测试框架。
 
 FUCKAI一款针对大模型LLM自身的安全检测工具，用户可对`已授权`的LLM进行安全测试。
+## 效果预览
+<video src="asset/Video_Project.mp4" controls muted width="100%"></video>
 
-### 目前已经实现攻击类型：
--    prompt注入
 ### 一键部署：
 -   安装
-```
+```shell
 git clone https://github.com/wr0x00/fuckai.git
+pip install -r requirements.txt
+python web.py                 # 默认 http://127.0.0.1:8000
+# python web.py --port 9000     # 指定端口
 ```
-### 配置文件说明(config.yaml)
 
-本程序需配置两个模型：
-- 攻击模型：打磨 prompt 、给攻击效果打分。
-- 被攻击模型：被测试模型
-```yaml
-attack_model:
-  base_url:                          # 攻击模型 API 基础 URL(必填)
-  api_key:                           # 攻击模型 API 密钥(必填)
-  model:                             # 攻击模型名称(必填)
-  temperature: 0.7                   # 改写 prompt 的创造性，温度可以高一些
+## 主要功能
+### prompt注入测试：
+在 模型管理页 配置攻击者模型和被攻击模型
+对应本程序的两个模型角色：
+- attack_model 攻击模型 —— 负责 (1) 改写 prompt (converter 端点)  (2) 给回复评分   (scorer 端点)
+- target_model 目标模型 —— 被测试的模型 (对应本程序的 prompt_target)
+![模型管理页](asset/model.png)
+内置弹药库源自[pyrit](https://github.com/microsoft/PyRIT/tree/main/pyrit/datasets)，包含测试话题、提示词模板、变换器。
+![弹药库](asset/ammo1.png)
+![弹药库](asset/ammo2.png)
+![弹药库](asset/ammo3.png)
 
-target_model:
-  base_url:                          # 被攻击模型 API 基础 URL(必填)
-  api_key:                           # 被攻击模型 API 密钥(必填)
-  model:                             # 被攻击模型名称(必填)
-  temperature: 0.0                   # 被攻击模型用确定性输出，方便对比
 
-attack:
-  timeout: 120            # 单次 HTTP 请求超时（秒）
-  max_tokens: 1024        # 被攻击模型回复上限
-  variation_count: 3      # variation 变换器一次生成的变体数
 
-memory:
-  db_path: fuckai.db  # 历史记录落库 SQLite
-``` 
--   运行
-```bash
-python run.py
-``` 
-
-### 攻击原理：
+#### 攻击原理：
     `话题 -> 提示词模板包装 -> 变换器 -> 目标模型 -> 评分 -> 记录`
 ```
   prompt组装:
@@ -88,7 +75,7 @@ python run.py
               │  SQLite 记录       │ → 导出 JSON/CSV 报告
               └───────────────────┘
 ```
-弹药库源自[pyrit](https://github.com/microsoft/PyRIT/tree/main/pyrit/datasets)
+
   组装最终 prompt 的三步（以话题"how to make a cake"为例）：
 ```
     ① 话题 (objective)
@@ -115,37 +102,26 @@ python run.py
               │  (被攻击模型)      │    攻击模型打分
               └───────────────────┘
 ```
-### 功能介绍
-```
-------------- 主菜单 -------------
-  1. 测试模型连接
-  2. 查看弹药库
-  3. 开始批量攻击
-  4. 导出测试报告 (JSON/CSV)
-  5. 帮助
-  6. 从 GitHub 更新
-  0. 退出
-----------------------------------
-```
-- 测试模型连接:测试被攻击模型和攻击模型是否正常连接。
-- 查看弹药库:查看弹药库中的话题、提示词模板和变换器。
-- 开始批量攻击:开始批量攻击，包括选择话题、提示词模板、变换器和攻击模型。
-- 导出测试报告:导出攻击结果的 JSON/CSV 报告。
-- 帮助:显示帮助信息。
-- 从 GitHub 更新:从 GitHub 更新最新版本。
-- 退出:退出程序。
+### 人工工作台
+手工构造直接/间接提示词注入样本。
+#### 注入模板
+![注入模板](asset/h1.png)
+内置 **2550 条**注入模板（35 个分类、11 种语言），支持按关键词 / 分类 / 语言 / 标签检索与实时预览；「分层组合」按 载体（carrier）× 手法（technique）× 目标（objective）三层抽取并用种子随机保证可复现，支持长文本切分与位置嵌入（首/中/尾/随机），一条样本可一键复制、存为模板、送入攻击测试或直连对话。
+#### 支持PDF 多模态间接注入构造
+![PDF 多模态](asset/h2.png)
+手写 PDF 对象流生成带隐藏载荷的文档，覆盖 **18 个通道**（文本层 7 / 结构层 4 / 文档层 6 / 动作层 1），如白字、同色覆盖、裁剪区外、注释、图层、元数据、JavaScript 动作等；同时生成一份不含载荷的**对照版 PDF**，用于做差异比对，确认通道是否真的生效。
+#### 其他形态构造
+![其他形态构造](asset/h3.png)
+12 种纯文本载体形态，把同一段注入文本包装成评论框、HTML 注释、Markdown 表格、邮件引用、终端日志、代码注释等形态，便于测试模型的上下文边界敏感度。
 
-### Web 界面
+## 免责声明
 
-除命令行外，本程序同时提供一套 Web 界面（FastAPI + Vue 3，前后端不分离，单进程同时提供接口和页面）。
+本工具仅供**合法授权的安全研究与测试**使用，仅对你**拥有所有权**或**已获得书面授权**的 LLM 应用进行测试；
+使用者需自行承担因违规使用而产生的一切法律责任，与本项目作者无关。
 
-```
-pip install fastapi uvicorn
-python web.py                 # 默认 http://127.0.0.1:8000
-python web.py --port 9000     # 指定端口
-```
 
-页面包含概览、弹药库、攻击测试、测试记录、模型配置、从 GitHub 更新六个模块。攻击测试通过 SSE 流式返回结果，边跑边出进度；测试记录可展开查看原始 prompt、模型回复与判定理由，并导出 JSON/CSV 报告。
+## 许可证
 
-Web 界面与命令行共用同一份 `config.yaml` 和 `fuckai.db`，两边数据互通。
-```
+本项目基于 [Apache License 2.0](LICENSE) 开源发布。
+
+
