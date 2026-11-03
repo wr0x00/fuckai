@@ -4,6 +4,7 @@ fuckai.db
 *.db
 *.sqlite3
 .env
+my_templates.json
 
 # Python
 __pycache__/

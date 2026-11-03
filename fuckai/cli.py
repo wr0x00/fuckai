@@ -39,11 +39,7 @@ class CLI:
     @staticmethod
     def _ask(prompt: str, default: str = "") -> str:
         suffix = f" [回车={default}]" if default else ""
-        try:
-            val = input(f"{prompt}{suffix}: ").strip()
-        except EOFError:
-            print()
-            return default
+        val = input(f"{prompt}{suffix}: ").strip()
         return val or default
 
     def _orch(self) -> Orchestrator:

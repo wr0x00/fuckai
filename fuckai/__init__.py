@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""fuckai —— 简易 LLM 鲁棒性测试机 (v2)。
+"""fuckai。
 
 模块一览：
     client.py        OpenAI 兼容端点客户端（被攻击模型 / 攻击模型）
