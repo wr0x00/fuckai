@@ -1,5 +1,7 @@
 
-FUCKAI一款针对大模型LLM自身的安全检测工具，用户可对`已授权`的LLM进行安全测试。
+# FUCKAI
+FUCKAI 新一代面向LLM自身安全检测工具，自动化prompt注入流水线，手工构造prompt，多模态间接提示词注入，检测大模型越狱和推理劫持能力。
+
 ## 效果预览
 ![效果预览](asset/Video_Demo.gif)
 
