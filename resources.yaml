@@ -1,0 +1,21 @@
+# 精选资料配置（前端「精选资料」页自动读取本文件显示）
+#
+# 格式说明：
+#   projects: 优秀开源项目（显示在页面上方）
+#   articles: 文章（显示在页面下方）
+# 每条包含两个键：
+#   name: 显示名称
+#   url:  跳转链接（http/https 开头）
+
+projects:
+  - name: garak "the LLM vulnerability scanner"
+    url: https://github.com/NVIDIA/garak
+  - name: PyRIT
+    url: https://github.com/Azure/PyRIT
+  - name: agentic_security
+    url: https://github.com/msoedov/agentic_security
+articles:
+  - name: AI视角下的webshell免杀如何实现？(上)
+    url: https://forum.butian.net/ai_security/187
+  - name: AI视角下的webshell免杀如何实现？(下)
+    url: https://forum.butian.net/ai_security/197

@@ -106,13 +106,26 @@ body {
 }
 
 .nav {
-    width: 236px;
-    flex: 0 0 236px;
+    width: var(--nav-w, 236px);
+    flex: 0 0 var(--nav-w, 236px);
+    position: relative;
     display: flex;
     flex-direction: column;
     background: var(--bg-layer);
     border-right: 1px solid var(--stroke);
 }
+
+.nav-resizer {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 40;
+}
+.nav-resizer:hover,
+.nav-resizer.on { background: var(--brand); opacity: .35; }
 
 .brand {
     display: flex;
@@ -2319,3 +2332,9 @@ html[data-theme="dark"] .tag-tgt {
         padding: 12px 14px 16px;
     }
 }
+/* ---------- Curated resources ---------- */
+.res-list { display: flex; flex-direction: column; gap: 6px; }
+.res-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--stroke); border-radius: 8px; color: var(--text); text-decoration: none; transition: border-color .15s, background .15s; }
+.res-item:hover { border-color: var(--brand); background: var(--bg-alt); }
+.res-name { font-weight: 600; font-size: 14px; }
+.res-url { margin-left: auto; font-size: 12px; color: var(--stroke-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }

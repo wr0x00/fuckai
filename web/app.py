@@ -305,7 +305,7 @@ def _ensure_models() -> tuple[list[dict], str, str]:
 
 
 def _save_models(models: list[dict], attack_id: str, target_id: str) -> None:
-    """写回模型列表，并同步 CLI 使用的 attack_model / target_model 两段。"""
+    """写回模型列表，并同步 attack_model / target_model 两段。"""
     raw = _read_config_raw()
     raw["models"] = models
     raw["attack_model_id"] = attack_id
@@ -942,6 +942,27 @@ def do_update(req: UpdateRequest) -> dict:
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/zh")
+def index_zh() -> FileResponse:
+    return FileResponse(STATIC_DIR / "zh" / "index.html")
+
+
+@app.get("/api/resources")
+def get_resources() -> dict:
+    """精选资料：从项目根目录 resources.yaml 读取跳转链接列表。"""
+    data = {"projects": [], "articles": []}
+    path = PROJECT_ROOT / "resources.yaml"
+    if path.exists():
+        try:
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if isinstance(loaded, dict):
+                data["projects"] = loaded.get("projects") or []
+                data["articles"] = loaded.get("articles") or []
+        except Exception:
+            pass
+    return data
 
 
 @app.get("/health")

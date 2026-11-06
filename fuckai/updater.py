@@ -2,7 +2,7 @@
 """GitHub 自动更新模块。
 
 原理：从配置的 GitHub 仓库下载最新源码 zip，解压后覆盖本项目代码目录
-（fuckai/、datasets/、run.py、README.md 等），但保留用户数据：
+（fuckai/、datasets/、README.md 等），但保留用户数据：
     config.yaml  —— 你的模型配置
     fuckai.db    —— 历史测试记录
 """
@@ -19,7 +19,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 # 更新时被覆盖的内容（用户数据不在其中）
-UPDATE_ITEMS = ("datasets", "fuckai", "web", "run.py", "web.py", "config_example.yaml", "README.md")
+UPDATE_ITEMS = ("datasets", "fuckai", "web", "web.py", "config_example.yaml", "README.md")
 # 更新时绝不触碰的用户数据
 PROTECTED = {"config.yaml", "fuckai.db"}
 
@@ -225,7 +225,7 @@ def update(repo_url: str) -> str:
             _safe_extract(zf, tmp_path)
         src_root = _detect_root(tmp_path)
 
-        if not (src_root / "fuckai").is_dir() and not (src_root / "run.py").exists():
+        if not (src_root / "fuckai").is_dir():
             raise RuntimeError("下载到的内容与本项目结构不匹配，已中止更新")
 
         _cleanup_stale()

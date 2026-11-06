@@ -10,6 +10,5 @@
     memory.py        SQLite 会话记录
     orchestrator.py  攻击管线编排
     updater.py       GitHub 自动更新
-    cli.py           命令行菜单
 """
 __version__ = "0.2.0"
