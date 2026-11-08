@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -1030,22 +1030,59 @@
       </div>
       <div class="modal-body chat-layout">
         <div class="chat-left">
+          <div class="chat-sess">
+            <button class="btn btn-ghost btn-sm" @click="chatNewSession" title="开始一个新会话">＋ 新对话</button>
+            <span class="chat-sess-t">历史会话</span>
+            <div class="chat-sess-list">
+              <div class="chat-sess-item" v-for="s in chat.sessions" :key="s.id"
+                   :class="{ on: s.id === chat.session_id }" @click="chatOpenSession(s)" :title="s.title">
+                <span class="chat-sess-title">{{ s.title || '（无标题）' }}</span>
+                <span class="chat-sess-meta">{{ s.msg_count }} 条 · {{ s.updated_at }}</span>
+                <button class="chat-sess-del" @click.stop="chatDeleteSession(s)" title="删除会话">×</button>
+              </div>
+              <div class="chat-sess-empty" v-if="!chat.sessions.length">暂无历史会话</div>
+            </div>
+          </div>
           <div class="chat-log" ref="chatLogEl">
             <div class="empty" v-if="!chat.messages.length">还没有对话，输入内容开始测试模型行为。</div>
-            <div class="msg" v-for="(m,i) in chat.messages" :key="i" :class="'msg-' + m.role">
+            <div class="msg" v-for="(m,i) in chat.messages" :key="i"
+                 :class="['msg-' + m.role, { streaming: chat.streaming && i === chat.messages.length - 1 && m.role === 'assistant' }]">
               <div class="msg-role">{{ m.role === 'user' ? '我' : (m.role === 'system' ? '系统' : '模型') }}</div>
+              <div class="msg-att" v-if="m.attachments && m.attachments.length">
+                <span class="att-chip" v-for="(a,j) in m.attachments" :key="j">
+                  <img v-if="a.mime && a.mime.startsWith('image/') && a.url" :src="a.url" class="att-thumb" alt="">
+                  <span class="att-name">{{ a.name }}</span>
+                </span>
+              </div>
+              <div class="msg-think" v-if="m.thinking">思考过程：{{ m.thinking }}</div>
               <div class="msg-body">{{ m.content }}</div>
             </div>
           </div>
           <div class="chat-send">
-            <textarea class="input" rows="3" v-model="chat.input" placeholder="输入消息，Ctrl+Enter 发送…"
-                      @keydown.ctrl.enter.prevent="chatSend()"></textarea>
+            <div class="attach-bar" v-if="chat.attachments.length">
+              <div class="attach-chip" v-for="(a,i) in chat.attachments" :key="i" :title="a.name + ' · ' + a.mime">
+                <img v-if="a.mime && a.mime.startsWith('image/')" :src="a.url" class="att-thumb" alt="">
+                <span class="att-name">{{ a.name }}</span>
+                <span class="att-size">{{ a.size > 1048576 ? (a.size/1048576).toFixed(1) + 'MB' : Math.ceil(a.size/1024) + 'KB' }}</span>
+                <button class="att-del" @click="chat.attachments.splice(i,1)" title="移除">×</button>
+              </div>
+            </div>
+            <div class="chat-send-row">
+              <button class="icon-btn" @click="$refs.chatFileInput.click()" title="添加图片 / 文件 / 视频等多模态附件">
+                <svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66L9.4 17.4a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <input type="file" ref="chatFileInput" multiple hidden
+                     accept="image/*,video/*,audio/*,.pdf,.txt,.md,.json,.csv,.py,.js,.html,.yaml,.yml,.log"
+                     @change="chatPickFiles">
+              <textarea class="input" rows="3" v-model="chat.input" placeholder="输入消息，Ctrl+Enter 发送；可先点左侧回形针添加图片/文件/视频…"
+                        @keydown.ctrl.enter.prevent="chatSend()"></textarea>
+            </div>
             <div class="chat-send-ops">
               <span class="muted">Ctrl+Enter 发送 · 上下文 {{ chat.ctx.enabled ? ('保留 ' + chat.ctx.rounds + ' 轮 / ' + chat.ctx.mode) : '关闭' }}</span>
               <div class="spacer"></div>
               <button class="btn btn-ghost" @click="chatClear" :disabled="!chat.messages.length">清空</button>
-              <button class="btn btn-primary" @click="chatSend" :disabled="chat.busy || !chat.input.trim()">
-                {{ chat.busy ? '发送中…' : '发送' }}
+              <button class="btn btn-primary" @click="chatSend" :disabled="chat.busy || (!chat.input.trim() && !chat.attachments.length)">
+                {{ chat.busy ? '生成中…' : '发送' }}
               </button>
             </div>
           </div>
@@ -1117,6 +1154,6 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
-<script src="/static/zh/app.js?v=4"></script>
+<script src="/static/zh/app.js?v=6"></script>
 </body>
 </html>

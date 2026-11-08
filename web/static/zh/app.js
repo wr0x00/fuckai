@@ -140,13 +140,17 @@ createApp({
                 api_key: '',
                 model: '',
                 temperature: 0.7,
+                session_id: '',
+                sessions: [],
                 messages: [],
                 input: '',
                 busy: false,
+                streaming: false,
                 preset: '',
                 system_prompt: '',
                 sentText: '',
                 max_tokens: 1024,
+                attachments: [],
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             },
             atk: {
@@ -649,15 +653,130 @@ createApp({
                 api_key: m.api_key,
                 model: m.model,
                 temperature: Number(m.temperature) || 0,
+                session_id: '',
+                sessions: [],
                 messages: [],
                 input: '',
                 busy: false,
+                streaming: false,
                 preset: '',
                 system_prompt: '',
                 sentText: '',
                 max_tokens: this.cfg.max_tokens || 1024,
+                attachments: [],
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             };
+            this.chatSessionsRefresh();
+        },
+
+        /* ---------------- 会话管理 ---------------- */
+
+        async chatSessionsRefresh() {
+            try {
+                const r = await this.api('/api/chat/sessions');
+                this.chat.sessions = r.sessions || [];
+            } catch (e) { /* 静默 */ }
+        },
+
+        async chatOpenSession(s) {
+            if (this.chat.busy) return;
+            try {
+                const r = await this.api('/api/chat/sessions/' + s.id);
+                const sess = r.session || {};
+                this.chat.session_id = sess.id;
+                this.chat.messages = sess.messages || [];
+                if (sess.base_url) {
+                    this.chat.id = sess.model_id || '';
+                    this.chat.name = sess.model_name || this.chat.name;
+                    this.chat.base_url = sess.base_url;
+                    this.chat.api_key = sess.api_key || '';
+                    this.chat.model = sess.model || this.chat.model;
+                }
+                this.chat.sentText = '';
+                this.chatScroll();
+            } catch (e) {
+                this.notify('加载会话失败: ' + e.message, 'err');
+            }
+        },
+
+        chatNewSession() {
+            this.chat.session_id = '';
+            this.chat.messages = [];
+            this.chat.sentText = '';
+            this.chat.attachments = [];
+        },
+
+        async chatDeleteSession(s) {
+            try {
+                await this.api('/api/chat/sessions/' + s.id, { method: 'DELETE' });
+                if (this.chat.session_id === s.id) this.chatNewSession();
+                this.chatSessionsRefresh();
+            } catch (e) {
+                this.notify('删除会话失败: ' + e.message, 'err');
+            }
+        },
+
+        /* ---------------- 附件 ---------------- */
+
+        chatPickFiles(ev) {
+            const files = Array.from(ev.target.files || []);
+            ev.target.value = '';
+            for (const f of files) {
+                if (f.size > 15 * 1024 * 1024) {
+                    this.notify('文件过大（>15MB）已跳过: ' + f.name, 'err');
+                    continue;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const url = String(reader.result || '');
+                    this.chat.attachments.push({
+                        name: f.name,
+                        mime: f.type || 'application/octet-stream',
+                        size: f.size,
+                        data: url.split(',')[1] || '',
+                        url,
+                    });
+                };
+                reader.readAsDataURL(f);
+            }
+        },
+
+        chatScroll() {
+            this.$nextTick(() => {
+                const el = this.$refs.chatLogEl;
+                if (el) el.scrollTop = el.scrollHeight;
+            });
+        },
+
+        /* 打字机渲染循环：增量先入缓冲，按帧逐字搬出，积压越多越快 */
+        chatTypeLoop(am) {
+            if (am._typing) return;
+            am._typing = true;
+            const step = () => {
+                const p = am.pending || '';
+                const tp = am.thinkPending || '';
+                if (!p.length && !tp.length) {
+                    if (this.chat.busy) {
+                        requestAnimationFrame(step); // 流未结束，等待后续增量
+                        return;
+                    }
+                    am._typing = false;
+                    return;
+                }
+                if (tp.length) {
+                    const n = Math.max(1, Math.ceil(tp.length / 20));
+                    am.thinking = (am.thinking || '') + tp.slice(0, n);
+                    am.thinkPending = tp.slice(n);
+                }
+                if (p.length) {
+                    const n = Math.max(1, Math.ceil(p.length / 10));
+                    am.content += p.slice(0, n);
+                    am.pending = p.slice(n);
+                }
+                this.chatScroll();
+                requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
         },
 
         applyPreset() {
@@ -673,50 +792,112 @@ createApp({
 
         async chatSend() {
             const text = this.chat.input.trim();
-            if (!text || this.chat.busy) return;
-            this.chat.messages.push({ role: 'user', content: text });
-            this.chat.input = '';
-            this.chat.busy = true;
+            const atts = this.chat.attachments;
+            if ((!text && !atts.length) || this.chat.busy) return;
             const ctx = this.chat.ctx;
             try {
-                const r = await this.api('/api/models/chat', {
+                if (!this.chat.session_id) {
+                    const cr = await this.api('/api/chat/sessions', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            model_id: this.chat.id,
+                            model_name: this.chat.name,
+                            base_url: this.chat.base_url,
+                            api_key: this.chat.api_key,
+                            model: this.chat.model,
+                        }),
+                    });
+                    this.chat.session_id = cr.session.id;
+                }
+            } catch (e) {
+                this.notify('创建会话失败: ' + e.message, 'err');
+                return;
+            }
+            const um = {
+                role: 'user',
+                content: text,
+                attachments: atts.map(a => ({ name: a.name, mime: a.mime, size: a.size, url: a.url })),
+            };
+            this.chat.messages.push(um);
+            this.chat.input = '';
+            this.chat.attachments = [];
+            const am = { role: 'assistant', content: '' };
+            this.chat.messages.push(am);
+            this.chat.busy = true;
+            this.chat.streaming = true;
+            this.chatScroll();
+            try {
+                const resp = await fetch('/api/models/chat/stream', {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        session_id: this.chat.session_id,
                         id: this.chat.id,
                         base_url: this.chat.base_url,
                         api_key: this.chat.api_key,
                         model: this.chat.model,
                         temperature: Number(this.chat.temperature) || 0,
                         system_prompt: this.chat.system_prompt || '',
-                        messages: this.chat.messages,
+                        messages: [{ role: 'user', content: text }],
+                        attachments: atts.map(a => ({ name: a.name, mime: a.mime, size: a.size, data: a.data, url: a.url })),
                         max_tokens: this.chat.max_tokens,
                         context_rounds: ctx.enabled ? ctx.rounds : 0,
                         history_mode: ctx.enabled ? ctx.mode : 'drop',
                         history_chars: ctx.enabled ? ctx.chars : 300,
                     }),
                 });
-                if (r.sent) this.chat.sentText = JSON.stringify(r.sent, null, 2);
-                if (r.ok) {
-                    this.chat.messages.push({ role: 'assistant', content: r.reply });
-                } else {
-                    this.chat.messages.push({ role: 'assistant', content: '[失败] ' + (r.error || '未知错误') });
-                    this.notify('对话失败: ' + (r.error || '未知错误'), 'err');
+                if (!resp.ok || !resp.body) {
+                    const errText = await resp.text().catch(() => '');
+                    throw new Error('HTTP ' + resp.status + (errText ? ': ' + errText.slice(0, 200) : ''));
+                }
+                const reader = resp.body.getReader();
+                const dec = new TextDecoder();
+                let buf = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buf += dec.decode(value, { stream: true });
+                    let idx;
+                    while ((idx = buf.indexOf('\n\n')) >= 0) {
+                        const raw = buf.slice(0, idx).trim();
+                        buf = buf.slice(idx + 2);
+                        if (!raw.startsWith('data:')) continue;
+                        let ev;
+                        try { ev = JSON.parse(raw.slice(5)); } catch (e) { continue; }
+                        if (ev.type === 'delta') {
+                            am.content += ev.text;
+                            this.chatScroll();
+                        } else if (ev.type === 'reasoning') {
+                            am.thinking = (am.thinking || '') + ev.text;
+                            this.chatScroll();
+                        } else if (ev.type === 'done') {
+                            am.content = ev.reply || am.content;
+                            if (ev.sent) this.chat.sentText = JSON.stringify(ev.sent, null, 2);
+                        } else if (ev.type === 'error') {
+                            am.content += (am.content ? '\n' : '') + '[失败] ' + ev.error;
+                            this.notify('对话失败: ' + ev.error, 'err');
+                        }
+                    }
                 }
             } catch (e) {
-                this.chat.messages.push({ role: 'assistant', content: '[异常] ' + e.message });
+                am.content += (am.content ? '\n' : '') + '[异常] ' + e.message;
                 this.notify('对话失败: ' + e.message, 'err');
             } finally {
                 this.chat.busy = false;
-                this.$nextTick(() => {
-                    const el = this.$refs.chatLogEl;
-                    if (el) el.scrollTop = el.scrollHeight;
-                });
+                this.chat.streaming = false;
+                this.chatSessionsRefresh();
+                this.chatScroll();
             }
         },
 
         chatClear() {
-            this.chat.messages = [];
-            this.chat.sentText = '';
+            // 清空 = 删除当前会话并重新开始
+            const sid = this.chat.session_id;
+            this.chatNewSession();
+            if (sid) {
+                this.api('/api/chat/sessions/' + sid, { method: 'DELETE' })
+                    .then(() => this.chatSessionsRefresh()).catch(() => {});
+            }
         },
 
         toggleConv(id) {

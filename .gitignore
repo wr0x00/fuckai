@@ -16,3 +16,6 @@ outputs/
 *.log
 report.json
 report.csv
+
+# 对话会话记录（本地数据）
+chat_sessions.json

@@ -448,13 +448,17 @@ createApp({
                 api_key: '',
                 model: '',
                 temperature: 0.7,
+                session_id: '',
+                sessions: [],
                 messages: [],
                 input: '',
                 busy: false,
+                streaming: false,
                 preset: '',
                 system_prompt: '',
                 sentText: '',
                 max_tokens: 1024,
+                attachments: [],
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             },
             atk: {
@@ -958,15 +962,99 @@ createApp({
                 api_key: m.api_key,
                 model: m.model,
                 temperature: Number(m.temperature) || 0,
+                session_id: '',
+                sessions: [],
                 messages: [],
                 input: '',
                 busy: false,
+                streaming: false,
                 preset: '',
                 system_prompt: '',
                 sentText: '',
                 max_tokens: this.cfg.max_tokens || 1024,
+                attachments: [],
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             };
+            this.chatSessionsRefresh();
+        },
+
+        /* ---------------- Sessions ---------------- */
+
+        async chatSessionsRefresh() {
+            try {
+                const r = await this.api('/api/chat/sessions');
+                this.chat.sessions = r.sessions || [];
+            } catch (e) { /* silent */ }
+        },
+
+        async chatOpenSession(s) {
+            if (this.chat.busy) return;
+            try {
+                const r = await this.api('/api/chat/sessions/' + s.id);
+                const sess = r.session || {};
+                this.chat.session_id = sess.id;
+                this.chat.messages = sess.messages || [];
+                if (sess.base_url) {
+                    this.chat.id = sess.model_id || '';
+                    this.chat.name = sess.model_name || this.chat.name;
+                    this.chat.base_url = sess.base_url;
+                    this.chat.api_key = sess.api_key || '';
+                    this.chat.model = sess.model || this.chat.model;
+                }
+                this.chat.sentText = '';
+                this.chatScroll();
+            } catch (e) {
+                this.notify('Failed to load session: ' + e.message, 'err');
+            }
+        },
+
+        chatNewSession() {
+            this.chat.session_id = '';
+            this.chat.messages = [];
+            this.chat.sentText = '';
+            this.chat.attachments = [];
+        },
+
+        async chatDeleteSession(s) {
+            try {
+                await this.api('/api/chat/sessions/' + s.id, { method: 'DELETE' });
+                if (this.chat.session_id === s.id) this.chatNewSession();
+                this.chatSessionsRefresh();
+            } catch (e) {
+                this.notify('Failed to delete session: ' + e.message, 'err');
+            }
+        },
+
+        /* ---------------- Attachments ---------------- */
+
+        chatPickFiles(ev) {
+            const files = Array.from(ev.target.files || []);
+            ev.target.value = '';
+            for (const f of files) {
+                if (f.size > 15 * 1024 * 1024) {
+                    this.notify('File too large (>15MB), skipped: ' + f.name, 'err');
+                    continue;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const url = String(reader.result || '');
+                    this.chat.attachments.push({
+                        name: f.name,
+                        mime: f.type || 'application/octet-stream',
+                        size: f.size,
+                        data: url.split(',')[1] || '',
+                        url,
+                    });
+                };
+                reader.readAsDataURL(f);
+            }
+        },
+
+        chatScroll() {
+            this.$nextTick(() => {
+                const el = this.$refs.chatLogEl;
+                if (el) el.scrollTop = el.scrollHeight;
+            });
         },
 
         applyPreset() {
@@ -982,50 +1070,112 @@ createApp({
 
         async chatSend() {
             const text = this.chat.input.trim();
-            if (!text || this.chat.busy) return;
-            this.chat.messages.push({ role: 'user', content: text });
-            this.chat.input = '';
-            this.chat.busy = true;
+            const atts = this.chat.attachments;
+            if ((!text && !atts.length) || this.chat.busy) return;
             const ctx = this.chat.ctx;
             try {
-                const r = await this.api('/api/models/chat', {
+                if (!this.chat.session_id) {
+                    const cr = await this.api('/api/chat/sessions', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            model_id: this.chat.id,
+                            model_name: this.chat.name,
+                            base_url: this.chat.base_url,
+                            api_key: this.chat.api_key,
+                            model: this.chat.model,
+                        }),
+                    });
+                    this.chat.session_id = cr.session.id;
+                }
+            } catch (e) {
+                this.notify('Failed to create session: ' + e.message, 'err');
+                return;
+            }
+            const um = {
+                role: 'user',
+                content: text,
+                attachments: atts.map(a => ({ name: a.name, mime: a.mime, size: a.size, url: a.url })),
+            };
+            this.chat.messages.push(um);
+            this.chat.input = '';
+            this.chat.attachments = [];
+            const am = { role: 'assistant', content: '' };
+            this.chat.messages.push(am);
+            this.chat.busy = true;
+            this.chat.streaming = true;
+            this.chatScroll();
+            try {
+                const resp = await fetch('/api/models/chat/stream', {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        session_id: this.chat.session_id,
                         id: this.chat.id,
                         base_url: this.chat.base_url,
                         api_key: this.chat.api_key,
                         model: this.chat.model,
                         temperature: Number(this.chat.temperature) || 0,
                         system_prompt: this.chat.system_prompt || '',
-                        messages: this.chat.messages,
+                        messages: [{ role: 'user', content: text }],
+                        attachments: atts.map(a => ({ name: a.name, mime: a.mime, size: a.size, data: a.data, url: a.url })),
                         max_tokens: this.chat.max_tokens,
                         context_rounds: ctx.enabled ? ctx.rounds : 0,
                         history_mode: ctx.enabled ? ctx.mode : 'drop',
                         history_chars: ctx.enabled ? ctx.chars : 300,
                     }),
                 });
-                if (r.sent) this.chat.sentText = JSON.stringify(r.sent, null, 2);
-                if (r.ok) {
-                    this.chat.messages.push({ role: 'assistant', content: r.reply });
-                } else {
-                    this.chat.messages.push({ role: 'assistant', content: '[Failed] ' + (r.error || 'Unknown error') });
-                    this.notify('Chat failed: ' + (r.error || 'Unknown error'), 'err');
+                if (!resp.ok || !resp.body) {
+                    const errText = await resp.text().catch(() => '');
+                    throw new Error('HTTP ' + resp.status + (errText ? ': ' + errText.slice(0, 200) : ''));
+                }
+                const reader = resp.body.getReader();
+                const dec = new TextDecoder();
+                let buf = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buf += dec.decode(value, { stream: true });
+                    let idx;
+                    while ((idx = buf.indexOf('\n\n')) >= 0) {
+                        const raw = buf.slice(0, idx).trim();
+                        buf = buf.slice(idx + 2);
+                        if (!raw.startsWith('data:')) continue;
+                        let ev;
+                        try { ev = JSON.parse(raw.slice(5)); } catch (e) { continue; }
+                        if (ev.type === 'delta') {
+                            am.content += ev.text;
+                            this.chatScroll();
+                        } else if (ev.type === 'reasoning') {
+                            am.thinking = (am.thinking || '') + ev.text;
+                            this.chatScroll();
+                        } else if (ev.type === 'done') {
+                            am.content = ev.reply || am.content;
+                            if (ev.sent) this.chat.sentText = JSON.stringify(ev.sent, null, 2);
+                        } else if (ev.type === 'error') {
+                            am.content += (am.content ? '\n' : '') + '[Failed] ' + ev.error;
+                            this.notify('Chat failed: ' + ev.error, 'err');
+                        }
+                    }
                 }
             } catch (e) {
-                this.chat.messages.push({ role: 'assistant', content: '[Error] ' + e.message });
+                am.content += (am.content ? '\n' : '') + '[Error] ' + e.message;
                 this.notify('Chat failed: ' + e.message, 'err');
             } finally {
                 this.chat.busy = false;
-                this.$nextTick(() => {
-                    const el = this.$refs.chatLogEl;
-                    if (el) el.scrollTop = el.scrollHeight;
-                });
+                this.chat.streaming = false;
+                this.chatSessionsRefresh();
+                this.chatScroll();
             }
         },
 
         chatClear() {
-            this.chat.messages = [];
-            this.chat.sentText = '';
+            // Clear = delete the current session and start over
+            const sid = this.chat.session_id;
+            this.chatNewSession();
+            if (sid) {
+                this.api('/api/chat/sessions/' + sid, { method: 'DELETE' })
+                    .then(() => this.chatSessionsRefresh()).catch(() => {});
+            }
         },
 
         toggleConv(id) {

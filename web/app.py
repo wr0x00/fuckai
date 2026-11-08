@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import threading
 import time
 import uuid
@@ -19,7 +20,7 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -134,6 +135,28 @@ class ChatRequest(BaseModel):
     context_rounds: int = 6
     history_mode: str = "compress"
     history_chars: int = 300
+
+
+class ChatAttachment(BaseModel):
+    name: str = ""
+    mime: str = ""
+    size: int = 0
+    data: str = ""  # base64，不带 data: 前缀
+    url: str = ""   # 可选 dataURI（用于预览与兜底）
+
+
+class ChatStreamRequest(ChatRequest):
+    session_id: str = ""
+    attachments: list[ChatAttachment] = Field(default_factory=list)
+
+
+class ChatSessionCreate(BaseModel):
+    model_id: str = ""
+    model_name: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    title: str = ""
 
 
 # --------------------------------------------------------------------------- #
@@ -513,6 +536,268 @@ def chat_model(req: ChatRequest) -> dict:
         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
         "sent": composed,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 直接对话：会话持久化 + 流式 + 多模态
+# --------------------------------------------------------------------------- #
+CHAT_SESSIONS_PATH = PROJECT_ROOT / "chat_sessions.json"
+_chat_sessions_lock = threading.Lock()
+
+
+def _load_chat_sessions() -> list[dict]:
+    try:
+        with open(CHAT_SESSIONS_PATH, "r", encoding="utf-8") as f:
+            return (json.load(f) or {}).get("sessions") or []
+    except FileNotFoundError:
+        return []
+    except Exception:
+        return []
+
+
+def _save_chat_sessions(sessions: list[dict]):
+    with open(CHAT_SESSIONS_PATH, "w", encoding="utf-8") as f:
+        json.dump({"sessions": sessions}, f, ensure_ascii=False, indent=2)
+
+
+def _session_brief(s: dict) -> dict:
+    return {
+        "id": s.get("id", ""),
+        "title": s.get("title", ""),
+        "model_name": s.get("model_name", ""),
+        "model": s.get("model", ""),
+        "created_at": s.get("created_at", ""),
+        "updated_at": s.get("updated_at", ""),
+        "msg_count": len(s.get("messages") or []),
+    }
+
+
+@app.get("/api/chat/sessions")
+def list_chat_sessions() -> dict:
+    briefs = [_session_brief(s) for s in _load_chat_sessions()]
+    briefs.sort(key=lambda b: b.get("updated_at") or "", reverse=True)
+    return {"sessions": briefs}
+
+
+@app.post("/api/chat/sessions")
+def create_chat_session(req: ChatSessionCreate) -> dict:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    s = {
+        "id": uuid.uuid4().hex[:12],
+        "title": (req.title or "新对话").strip()[:40] or "新对话",
+        "model_id": req.model_id,
+        "model_name": req.model_name,
+        "base_url": req.base_url,
+        "api_key": req.api_key,
+        "model": req.model,
+        "created_at": now,
+        "updated_at": now,
+        "messages": [],
+    }
+    with _chat_sessions_lock:
+        sessions = _load_chat_sessions()
+        sessions.append(s)
+        _save_chat_sessions(sessions)
+    return {"ok": True, "session": s}
+
+
+@app.get("/api/chat/sessions/{sid}")
+def get_chat_session(sid: str) -> dict:
+    for s in _load_chat_sessions():
+        if s.get("id") == sid:
+            return {"ok": True, "session": s}
+    raise HTTPException(status_code=404, detail="会话不存在")
+
+
+@app.delete("/api/chat/sessions/{sid}")
+def delete_chat_session(sid: str) -> dict:
+    with _chat_sessions_lock:
+        sessions = _load_chat_sessions()
+        remain = [s for s in sessions if s.get("id") != sid]
+        if len(remain) == len(sessions):
+            raise HTTPException(status_code=404, detail="会话不存在")
+        _save_chat_sessions(remain)
+    return {"ok": True}
+
+
+def _build_content_parts(text: str, attachments: list[dict]) -> list[dict]:
+    """把用户输入 + 附件组装成 OpenAI 多模态 content parts。"""
+    parts: list[dict] = []
+    if text:
+        parts.append({"type": "text", "text": text})
+    for a in attachments:
+        name = a.get("name") or "file"
+        mime = (a.get("mime") or "").lower()
+        data = a.get("data") or ""
+        datauri = a.get("url") or (f"data:{mime};base64,{data}" if data else "")
+        if not data:
+            continue
+        if mime.startswith("image/"):
+            parts.append({"type": "image_url", "image_url": {"url": datauri}})
+        elif mime.startswith("video/"):
+            # OpenAI 兼容网关常见扩展写法（如 Qwen-VL video_url）
+            parts.append({"type": "video_url", "video_url": {"url": datauri}})
+        elif mime == "application/pdf":
+            parts.append({"type": "file", "file": {"filename": name, "file_data": datauri}})
+        elif mime.startswith("audio/"):
+            fmt = name.rsplit(".", 1)[-1].lower() or "wav"
+            parts.append({"type": "input_audio", "input_audio": {"data": data, "format": fmt}})
+        else:
+            # 文本类文件尝试内联正文
+            txt = ""
+            try:
+                raw = base64.b64decode(data)
+                try:
+                    txt = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    txt = ""
+            except Exception:
+                txt = ""
+            if txt and len(txt) < 100000:
+                parts.append({"type": "text", "text": f"【附件文件 {name}】\n{txt}"})
+            else:
+                parts.append({"type": "text",
+                              "text": f"【附件文件 {name}（{mime or '未知类型'}）无法内联解析，请描述其内容】"})
+    return parts or [{"type": "text", "text": ""}]
+
+
+def _sent_preview(composed: list[dict]) -> list[dict]:
+    """用于前端展示「本次实际发送」：把多模态数据替换为占位符。"""
+    out = []
+    for m in composed:
+        content = m.get("content")
+        if isinstance(content, list):
+            slim = []
+            for p in content:
+                p = dict(p)
+                if p.get("type") == "text":
+                    continue
+                slim.append({"type": p.get("type"), "data": "[base64 数据已省略]"})
+            texts = [p.get("text", "") for p in content if p.get("type") == "text"]
+            out.append({"role": m.get("role"), "content": "\n".join(texts), "parts": slim})
+        else:
+            out.append(m)
+    return out
+
+
+@app.post("/api/models/chat/stream")
+def chat_model_stream(req: ChatStreamRequest):
+    """流式直连对话：SSE 逐段返回，消息自动存入 session。"""
+    info = _resolve_model(
+        ModelItem(
+            id=req.id,
+            base_url=req.base_url,
+            api_key=req.api_key,
+            model=req.model,
+            temperature=req.temperature if req.temperature is not None else 0.7,
+        )
+    )
+    if not info["base_url"] or not info["model"]:
+        raise HTTPException(status_code=400, detail="模型缺少 Base URL 或模型名称")
+
+    with _chat_sessions_lock:
+        session = next(
+            (s for s in _load_chat_sessions() if s.get("id") == req.session_id), None)
+    if session is None:
+        raise HTTPException(status_code=400, detail="会话不存在，请先创建会话")
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    text = (req.messages[-1].get("content") if req.messages else "") or ""
+    user_msg = {
+        "role": "user",
+        "content": text,
+        "attachments": [
+            {"name": a.name, "mime": a.mime, "size": a.size} for a in req.attachments
+        ],
+        "ts": now,
+    }
+
+    # 历史（纯文本）+ 当前消息，走统一的上下文优化策略
+    hist = [
+        {"role": m["role"], "content": m.get("content") or ""}
+        for m in (session.get("messages") or [])
+        if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
+    ]
+    hist.append({"role": "user", "content": text})
+    compose_req = ChatRequest(
+        id=req.id, base_url=req.base_url, api_key=req.api_key, model=req.model,
+        temperature=req.temperature, system_prompt=req.system_prompt,
+        messages=hist, max_tokens=req.max_tokens,
+        context_rounds=req.context_rounds, history_mode=req.history_mode,
+        history_chars=req.history_chars,
+    )
+    composed = _compose_messages(compose_req)
+    if req.attachments:
+        for m in reversed(composed):
+            if m.get("role") == "user":
+                m["content"] = _build_content_parts(text, [a.model_dump() for a in req.attachments])
+                break
+
+    # 用户消息立即落盘（即使后续失败也保留历史）
+    with _chat_sessions_lock:
+        sessions = _load_chat_sessions()
+        for s in sessions:
+            if s.get("id") == session["id"]:
+                s["messages"].append(user_msg)
+                s["updated_at"] = now
+                if (s.get("title") or "新对话") == "新对话" and text:
+                    s["title"] = _clip(text, 20)
+                session = s
+                break
+        _save_chat_sessions(sessions)
+
+    atk = _read_config_raw().get("attack") or {}
+    client = ChatClient(
+        info["base_url"],
+        info["api_key"],
+        info["model"],
+        req.temperature if req.temperature is not None else info["temperature"],
+        int(atk.get("timeout", 120) or 120),
+        int(req.max_tokens or atk.get("max_tokens", 1024) or 1024),
+    )
+
+    def _sse(obj: dict) -> str:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    def gen():
+        t0 = time.perf_counter()
+        acc: list[str] = []
+        think_acc: list[str] = []
+        yield _sse({"type": "meta", "model": client.model})
+        try:
+            for kind, delta in client.chat_stream(composed):
+                if kind == "reasoning":
+                    think_acc.append(delta)
+                    yield _sse({"type": "reasoning", "text": delta})
+                else:
+                    acc.append(delta)
+                    yield _sse({"type": "delta", "text": delta})
+            reply = "".join(acc)
+            with _chat_sessions_lock:
+                sessions = _load_chat_sessions()
+                for s in sessions:
+                    if s.get("id") == session["id"]:
+                        msg = {"role": "assistant", "content": reply, "ts": now}
+                        if think_acc:
+                            msg["thinking"] = "".join(think_acc)
+                        s["messages"].append(msg)
+                        s["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        break
+                _save_chat_sessions(sessions)
+            yield _sse({
+                "type": "done",
+                "reply": reply,
+                "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                "sent": _sent_preview(composed),
+            })
+        except Exception as e:
+            yield _sse({"type": "error", "error": str(e)})
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # --------------------------------------------------------------------------- #

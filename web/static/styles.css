@@ -2338,3 +2338,31 @@ html[data-theme="dark"] .tag-tgt {
 .res-item:hover { border-color: var(--brand); background: var(--bg-alt); }
 .res-name { font-weight: 600; font-size: 14px; }
 .res-url { margin-left: auto; font-size: 12px; color: var(--stroke-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+
+/* ---------------- 直接对话：会话列表 / 附件 / 流式 ---------------- */
+.chat-sess { border: 1px solid var(--stroke); border-radius: 8px; background: var(--bg-alt); padding: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.chat-sess > .btn { align-self: flex-start; }
+.chat-sess-t { font-size: 11.5px; color: var(--text-3); font-weight: 600; }
+.chat-sess-list { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
+.chat-sess-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; transition: background .13s; }
+.chat-sess-item:hover { background: var(--bg-sunken); }
+.chat-sess-item.on { background: var(--grad-soft); border-color: var(--brand); }
+.chat-sess-title { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.chat-sess-meta { font-size: 11px; color: var(--text-3); flex: none; }
+.chat-sess-del { border: 0; background: transparent; color: var(--text-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 4px; flex: none; }
+.chat-sess-del:hover { color: var(--danger); background: var(--danger-bg); }
+.chat-sess-empty { font-size: 12px; color: var(--text-3); text-align: center; padding: 6px 0; }
+.chat-send-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-send-row .icon-btn { flex: none; margin-bottom: 4px; }
+.chat-send-row textarea { flex: 1; }
+.attach-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.attach-chip, .att-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--bg-alt); font-size: 12px; max-width: 260px; }
+.att-thumb { width: 26px; height: 26px; object-fit: cover; border-radius: 4px; flex: none; }
+.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-size { color: var(--text-3); font-size: 11px; flex: none; }
+.att-del { border: 0; background: transparent; color: var(--text-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.att-del:hover { color: var(--danger); }
+.msg-att { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.msg.streaming .msg-body::after { content: "▍"; color: var(--brand); animation: chat-blink 1s steps(1) infinite; margin-left: 2px; }
+@keyframes chat-blink { 50% { opacity: 0; } }
+.msg-think { font-size: 12px; color: var(--text-3); font-style: italic; border-left: 2px solid var(--stroke-strong); padding: 2px 0 2px 8px; margin: 4px 0; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
