@@ -1,5 +1,9 @@
 
 # FUCKAI
+
+简体中文|[English](README_EN.md)
+
+
 FUCKAI 新一代面向LLM自身安全检测工具，自动化prompt注入流水线，手工构造prompt，多模态间接提示词注入，检测大模型越狱和推理劫持能力。
 
 ## 效果预览
@@ -23,7 +27,6 @@ python web.py                 # 默认 http://127.0.0.1:8000
 - attack_model 攻击模型 —— 负责 (1) 改写 prompt (converter 端点)  (2) 给回复评分   (scorer 端点)
 - target_model 目标模型 —— 被测试的模型 (对应本程序的 prompt_target)
 ![模型管理页](asset/model.png)
-内置弹药库源自[pyrit](https://github.com/microsoft/PyRIT/tree/main/pyrit/datasets)，包含测试话题、提示词模板、变换器。
 ![弹药库](asset/ammo1.png)
 ![弹药库](asset/ammo2.png)
 ![弹药库](asset/ammo3.png)

@@ -1,7 +1,6 @@
 # FUCKAI — A New-Generation Security Testing Tool for LLMs Themselves
-> This project was founded in 2026.11. The field of LLM self-security research is still in its infancy: most "security for AI" research remains at the paper stage, with little engineering adoption. The types of LLM self-vulnerabilities disclosed so far are relatively shallow in principle (mainly prompt injection), and no long-chain, broadly generalizable, deep, or highly damaging vulnerability classes have yet surfaced.
 
-> This project aims to absorb the best LLM attack techniques from across the web, be maintained long-term, and strive to build a systematic, open-source LLM self-security testing framework.
+English|[简体中文](README.md)
 
 FUCKAI is a security testing tool targeting Large Language Models (LLMs) themselves. Users may run security tests against LLMs they are `authorized` to test.
 
@@ -26,7 +25,6 @@ These correspond to the two model roles in this program:
 - attack_model (attacker model) — responsible for (1) rewriting prompts (converter endpoint) and (2) scoring replies (scorer endpoint)
 - target_model (target model) — the model under test (corresponds to prompt_target in this program)
 ![Model Management](asset/model.png)
-The built-in arsenal comes from [pyrit](https://github.com/microsoft/PyRIT/tree/main/pyrit/datasets), including test topics, prompt templates, and transformers.
 ![Arsenal](asset/ammo1.png)
 ![Arsenal](asset/ammo2.png)
 ![Arsenal](asset/ammo3.png)
