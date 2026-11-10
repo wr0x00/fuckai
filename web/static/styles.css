@@ -2487,6 +2487,20 @@ html[data-theme="dark"] .tag-tgt {
     flex: none;
 }
 
+.chat-sess-model {
+    flex: none;
+    max-width: 100%;
+    font-size: 10.5px;
+    color: var(--brand);
+    background: var(--grad-soft);
+    border: 1px solid var(--stroke);
+    border-radius: 8px;
+    padding: 1px 7px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chat-sess-del {
     border: 0;
     background: transparent;

@@ -805,7 +805,7 @@
 
         <div class="card">
           <div class="rec-list" v-if="filteredRecords.length">
-            <record-item v-for="r in filteredRecords" :key="r.id" :rec="r" />
+            <record-item v-for="r in filteredRecords" :key="r.id" :rec="r" collapsed />
           </div>
           <div class="empty" v-else>没有匹配的记录</div>
         </div>
@@ -1037,6 +1037,7 @@
               <div class="chat-sess-item" v-for="s in chat.sessions" :key="s.id"
                    :class="{ on: s.id === chat.session_id }" @click="chatOpenSession(s)" :title="s.title">
                 <span class="chat-sess-title">{{ s.title || '（无标题）' }}</span>
+                <span class="chat-sess-model mono">{{ s.model_name || s.model || '未知模型' }}</span>
                 <span class="chat-sess-meta">{{ s.msg_count }} 条 · {{ s.updated_at }}</span>
                 <button class="chat-sess-del" @click.stop="chatDeleteSession(s)" title="删除会话">×</button>
               </div>
