@@ -59,6 +59,21 @@ const RecordItem = {
             </div>
             <div class="rec-body" v-show="expanded">
                 <div class="kv">
+                    <div class="kv-head"><b>模型信息</b></div>
+                    <div class="rec-models">
+                        <div class="rec-model-row">
+                            <span class="rec-model-tag tag-atk">攻击者</span>
+                            <span class="rec-model-name mono" :title="rec.attack_model">{{ rec.attack_model || '—' }}</span>
+                            <span class="rec-model-url mono muted" :title="rec.attack_url">{{ rec.attack_url || '' }}</span>
+                        </div>
+                        <div class="rec-model-row">
+                            <span class="rec-model-tag tag-tgt">被攻击</span>
+                            <span class="rec-model-name mono" :title="rec.target_model">{{ rec.target_model || '—' }}</span>
+                            <span class="rec-model-url mono muted" :title="rec.target_url">{{ rec.target_url || '' }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="kv">
                     <div class="kv-head">
                         <b>发送的 prompt</b>
                         <button class="copy-btn" @click="copy(rec.prompt)" :disabled="!rec.prompt">复制</button>
@@ -285,7 +300,9 @@ createApp({
                 if (this.recFilter === 'false' && r.success) return false;
                 if (!q) return true;
                 return (r.objective || '').toLowerCase().includes(q) ||
-                    (r.converter || '').toLowerCase().includes(q);
+                    (r.converter || '').toLowerCase().includes(q) ||
+                    (r.attack_model || '').toLowerCase().includes(q) ||
+                    (r.target_model || '').toLowerCase().includes(q);
             });
         },
         connModels() {

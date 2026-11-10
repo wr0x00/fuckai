@@ -57,7 +57,7 @@ class TrueFalseScorer:
                 return self._parse(raw)
             except Exception as e:  # 评分模型挂了不至于中断整个测试
                 fallback = self._keyword_score(response)
-                return fallback + (f"（LLM 评分失败，使用关键词兜底: {e}）",)
+                return fallback[0], f"{fallback[1]}（LLM 评分失败，使用关键词兜底: {e}）"
 
         return self._keyword_score(response)
 

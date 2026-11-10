@@ -1127,6 +1127,7 @@ def run_attack_stream(req: AttackRequest):
                         "response": "",
                         "success": False,
                         "reason": f"[异常] {e}",
+                        **orch.model_info,
                     }
                 if record.get("success"):
                     ok += 1

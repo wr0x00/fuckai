@@ -46,6 +46,13 @@ class Orchestrator:
         self.converter = PromptConverter(self.attack_client, atk.variation_count)
         self.scorer = TrueFalseScorer(self.attack_client)
         self.memory = Memory(cfg.db_path)
+        # 每条记录随附本次使用的攻击者 / 被攻击模型信息
+        self.model_info = {
+            "attack_model": a.model or "",
+            "attack_url": a.base_url or "",
+            "target_model": t.model or "",
+            "target_url": t.base_url or "",
+        }
 
     def run(self, objective: str, converter_id: str = "direct",
             payload: Payload | None = None, verbose: bool = True) -> dict:
@@ -93,6 +100,7 @@ class Orchestrator:
             "response": response,
             "success": success,
             "reason": reason,
+            **self.model_info,
         }
         self.memory.save(record)
         if verbose:
@@ -130,6 +138,7 @@ class Orchestrator:
             "response": "",
             "success": False,
             "reason": reason,
+            **self.model_info,
         }
         self.memory.save(record)
         if verbose:

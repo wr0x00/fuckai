@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS attacks (
     prompt      TEXT NOT NULL,
     response    TEXT NOT NULL,
     success     INTEGER NOT NULL,
-    reason      TEXT
+    reason      TEXT,
+    attack_model TEXT,
+    attack_url   TEXT,
+    target_model TEXT,
+    target_url   TEXT
 );
 """
 
@@ -39,13 +43,18 @@ class Memory:
             cols = {row[1] for row in self.conn.execute("PRAGMA table_info(attacks)")}
             if "payload" not in cols:
                 self.conn.execute("ALTER TABLE attacks ADD COLUMN payload TEXT")
+            # 兼容老库：补模型信息列（攻击者 / 被攻击模型）
+            for col in ("attack_model", "attack_url", "target_model", "target_url"):
+                if col not in cols:
+                    self.conn.execute(f"ALTER TABLE attacks ADD COLUMN {col} TEXT")
             self.conn.commit()
 
     def save(self, record: dict) -> int:
         with self._lock:
             cur = self.conn.execute(
-                "INSERT INTO attacks (ts, converter, objective, payload, prompt, response, success, reason) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO attacks (ts, converter, objective, payload, prompt, response, success, reason, "
+                "attack_model, attack_url, target_model, target_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.get("ts") or datetime.now().isoformat(timespec="seconds"),
                     record["converter"],
@@ -55,6 +64,10 @@ class Memory:
                     record["response"],
                     int(record["success"]),
                     record.get("reason", ""),
+                    record.get("attack_model", ""),
+                    record.get("attack_url", ""),
+                    record.get("target_model", ""),
+                    record.get("target_url", ""),
                 ),
             )
             self.conn.commit()
@@ -63,19 +76,23 @@ class Memory:
     def recent(self, limit: int = 20) -> list[dict]:
         with self._lock:
             cur = self.conn.execute(
-                "SELECT id, ts, converter, payload, objective, success, reason FROM attacks "
+                "SELECT id, ts, converter, payload, objective, success, reason, "
+                "attack_model, attack_url, target_model, target_url FROM attacks "
                 "ORDER BY id DESC LIMIT ?", (limit,),
             )
-            return [dict(zip(("id", "ts", "converter", "payload", "objective", "success", "reason"), row))
+            return [dict(zip(("id", "ts", "converter", "payload", "objective", "success", "reason",
+                              "attack_model", "attack_url", "target_model", "target_url"), row))
                     for row in cur.fetchall()]
 
     def all(self) -> list[dict]:
         with self._lock:
             cur = self.conn.execute(
-                "SELECT id, ts, converter, payload, objective, prompt, response, success, reason "
+                "SELECT id, ts, converter, payload, objective, prompt, response, success, reason, "
+                "attack_model, attack_url, target_model, target_url "
                 "FROM attacks ORDER BY id"
             )
-            keys = ("id", "ts", "converter", "payload", "objective", "prompt", "response", "success", "reason")
+            keys = ("id", "ts", "converter", "payload", "objective", "prompt", "response", "success",
+                    "reason", "attack_model", "attack_url", "target_model", "target_url")
             return [dict(zip(keys, row)) for row in cur.fetchall()]
 
     def clear(self) -> int:
@@ -97,10 +114,12 @@ class Memory:
         with open(path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(("id", "ts", "converter", "payload", "objective", "success",
-                             "reason", "prompt", "response"))
+                             "reason", "attack_model", "attack_url", "target_model", "target_url",
+                             "prompt", "response"))
             for r in records:
                 writer.writerow((r["id"], r["ts"], r["converter"], r["payload"], r["objective"],
-                                 r["success"], r["reason"], r["prompt"], r["response"]))
+                                 r["success"], r["reason"], r["attack_model"], r["attack_url"],
+                                 r["target_model"], r["target_url"], r["prompt"], r["response"]))
         return len(records)
 
     def close(self):
