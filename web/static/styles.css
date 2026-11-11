@@ -2487,6 +2487,65 @@ html[data-theme="dark"] .tag-tgt {
     flex: none;
 }
 
+.btn-danger {
+    background: var(--grad-danger);
+    border-color: transparent;
+    color: #fff;
+}
+
+.btn-danger:hover {
+    filter: brightness(1.08);
+}
+
+.btn-danger:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.field-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+}
+
+.num-sm {
+    width: 64px;
+    padding: 5px 8px;
+    font-size: 13px;
+}
+
+.hint-warn {
+    font-size: 11.5px;
+    color: var(--warn);
+}
+
+.atk-runopts {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--stroke);
+}
+
+.opt-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.opt-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+}
+
+.opt-note {
+    font-size: 11.5px;
+}
+
 .chat-sess-model {
     flex: none;
     max-width: 100%;

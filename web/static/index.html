@@ -764,8 +764,25 @@
               <button class="btn btn-primary" @click="runAttack" :disabled="running">
                 {{ running ? 'Running…' : 'Start attack' }}
               </button>
-              <button class="btn btn-ghost" @click="resetRun" :disabled="!running">Stop</button>
-              <span class="muted" v-if="planTotal">{{ planTotal }} requests planned</span>
+              <button class="btn btn-danger" @click="resetRun" :disabled="!running">Stop</button>
+              <span class="muted" v-if="planTotal">{{ planTotal }} requests planned · {{ atk.useConcurrency ? 'concurrency ' + planConcurrency : 'serial' }}</span>
+            </div>
+            <div class="atk-runopts">
+              <div class="opt-row">
+                <label class="check"><input type="checkbox" v-model="atk.useConcurrency" :disabled="running"> Use concurrency</label>
+                <input v-if="atk.useConcurrency" class="input num-sm" type="number" min="1" max="16" v-model.number="atk.concurrency"
+                       :disabled="running" title="Number of simultaneous requests"
+                       @change="atk.concurrency = Math.min(16, Math.max(1, Math.round(atk.concurrency || 4)))">
+                <span v-if="atk.useConcurrency" class="muted hint-warn">Note: check whether your model provider enforces rate limits</span>
+              </div>
+              <div class="opt-row">
+                <label class="field-inline"><span class="opt-label">Timeout</span>
+                  <input class="input num-sm" type="number" min="30" max="3600" step="30" v-model.number="atk.timeout"
+                         :disabled="running" title="Per-request timeout in seconds">
+                  <span class="muted">s / request</span>
+                </label>
+                <span class="muted opt-note">Max wait time per model request, attack runs only (connection-test timeout is configured separately on the Settings page)</span>
+              </div>
             </div>
           </div>
 
@@ -1155,6 +1172,6 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
-<script src="/static/app.js?v=7"></script>
+<script src="/static/app.js?v=12"></script>
 </body>
 </html>

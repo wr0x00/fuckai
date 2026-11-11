@@ -12,12 +12,13 @@ import urllib.request
 
 class ChatClient:
     def __init__(self, base_url: str, api_key: str, model: str,
-                 temperature: float = 0.0, timeout: int = 120, max_tokens: int = 1024):
+                 temperature: float = 0.0, timeout: int = 120, max_tokens: int | None = 1024):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
+        # max_tokens=None 表示不限制输出长度（请求里省略该字段，由模型/服务端决定）
         self.max_tokens = max_tokens
 
     # ---- 对应本程序 Target.send_promptAsync(prompt) ----
@@ -29,8 +30,9 @@ class ChatClient:
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature if temperature is None else temperature,
-            "max_tokens": self.max_tokens,
         }
+        if self.max_tokens is not None:
+            payload["max_tokens"] = self.max_tokens
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
@@ -46,7 +48,12 @@ class ChatClient:
             raise RuntimeError(f"HTTP {e.code} 调用失败: {body}") from e
         except urllib.error.URLError as e:
             raise RuntimeError(f"连接失败 ({self.base_url}): {e.reason}") from e
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"] or {}
+        text = msg.get("content")
+        # 部分思考模型把额度耗在思考上，正文为空时兜底取思考内容
+        if not text:
+            text = msg.get("reasoning_content") or ""
+        return text
 
     # ---- 流式对话：逐段产出回复文本（OpenAI 兼容 SSE） ----
     def chat_stream(self, messages: list[dict], temperature: float | None = None):
@@ -57,9 +64,10 @@ class ChatClient:
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature if temperature is None else temperature,
-            "max_tokens": self.max_tokens,
             "stream": True,
         }
+        if self.max_tokens is not None:
+            payload["max_tokens"] = self.max_tokens
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),

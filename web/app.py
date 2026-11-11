@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from fuckai.client import ChatClient
 from fuckai.config import load_config
 from fuckai.converters import list_converters
-from fuckai.orchestrator import Orchestrator
+from fuckai.orchestrator import DEFAULT_CONCURRENCY, AttackCancelled, Orchestrator
 from fuckai.payloads import Payload, PayloadLibrary, local_group_intro
 from fuckai.workbench import Workbench
 
@@ -96,6 +96,8 @@ class AttackRequest(BaseModel):
     objective_group: str = ""
     sample_size: int = 10
     use_all: bool = False
+    concurrency: int = 4
+    timeout: int = 120
 
 
 class UpdateRequest(BaseModel):
@@ -1080,7 +1082,9 @@ def run_attack(req: AttackRequest) -> dict:
         raise HTTPException(status_code=400, detail=f"找不到提示词模板: {req.payload_name}")
 
     orch = _orchestrator()
-    records = orch.run_batch(objectives, converter_ids, payload=payload, verbose=False)
+    records = orch.run_batch(objectives, converter_ids, payload=payload, verbose=False,
+                             concurrency=max(1, min(16, req.concurrency)),
+                             timeout=max(30, min(3600, req.timeout)))
     ok = sum(1 for r in records if r["success"])
     return {
         "total": len(records),
@@ -1090,9 +1094,28 @@ def run_attack(req: AttackRequest) -> dict:
     }
 
 
+# 进行中的批量攻击：run_id -> 取消事件（供 /api/attack/cancel 置位）
+_attack_runs: dict = {}
+_attack_runs_lock = threading.Lock()
+
+
+class _AttackCancelRequest(BaseModel):
+    run_id: str
+
+
+@app.post("/api/attack/cancel")
+def cancel_attack(req: _AttackCancelRequest) -> dict:
+    with _attack_runs_lock:
+        ev = _attack_runs.get(req.run_id)
+    if ev is None:
+        return {"ok": False, "detail": "任务不存在或已结束"}
+    ev.set()
+    return {"ok": True}
+
+
 @app.post("/api/attack/stream")
 def run_attack_stream(req: AttackRequest):
-    """流式执行：每完成一次攻击推送一条 SSE 事件。"""
+    """流式执行：后台线程并发跑批量攻击，SSE 实时推送进度与结果，支持取消。"""
     from fastapi.responses import StreamingResponse
 
     objectives = _resolve_objectives(req)
@@ -1103,36 +1126,60 @@ def run_attack_stream(req: AttackRequest):
     if req.payload_name and payload is None:
         raise HTTPException(status_code=400, detail=f"找不到提示词模板: {req.payload_name}")
 
-    total = len(objectives) * len(converter_ids)
+    total_planned = len(objectives) * len(converter_ids)
+    concurrency = max(1, min(16, req.concurrency))
+    timeout = max(30, min(3600, req.timeout))
 
     def gen():
         import json
+        import queue as _queue
 
-        yield f"data: {json.dumps({'type': 'start', 'total': total}, ensure_ascii=False)}\n\n"
-        done = 0
-        ok = 0
-        orch = _orchestrator()
-        for objective in objectives:
-            for cid in converter_ids:
-                done += 1
-                try:
-                    record = orch.run(objective, cid, payload=payload, verbose=False)
-                except Exception as e:
-                    record = {
-                        "ts": datetime.now().isoformat(timespec="seconds"),
-                        "converter": cid,
-                        "payload": payload.name if payload else "",
-                        "objective": objective,
-                        "prompt": "",
-                        "response": "",
-                        "success": False,
-                        "reason": f"[异常] {e}",
-                        **orch.model_info,
-                    }
-                if record.get("success"):
-                    ok += 1
-                yield f"data: {json.dumps({'type': 'item', 'done': done, 'total': total, 'record': record}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'type': 'done', 'total': total, 'success': ok, 'rate': round(ok / total * 100, 1) if total else 0.0}, ensure_ascii=False)}\n\n"
+        cancel = threading.Event()
+        run_id = uuid.uuid4().hex[:10]
+        with _attack_runs_lock:
+            _attack_runs[run_id] = cancel
+
+        q: _queue.Queue = _queue.Queue()
+
+        yield f"data: {json.dumps({'type': 'start', 'total': total_planned, 'run_id': run_id,
+                                   'concurrency': concurrency}, ensure_ascii=False)}\n\n"
+
+        def on_progress(done, total, record):
+            q.put(("item", done, total, record))
+
+        def worker():
+            orch = _orchestrator()
+            try:
+                records = orch.run_batch(objectives, converter_ids, payload=payload,
+                                         verbose=False, cancel=cancel, progress=on_progress,
+                                         concurrency=concurrency, timeout=timeout)
+                ok = sum(1 for r in records if r["success"])
+                q.put(("done", len(records), ok,
+                       round(ok / len(records) * 100, 1) if records else 0.0))
+            except AttackCancelled:
+                q.put(("cancelled", 0, 0, 0.0))
+            except Exception as e:
+                q.put(("error", 0, 0, str(e)))
+            finally:
+                with _attack_runs_lock:
+                    _attack_runs.pop(run_id, None)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+        while True:
+            kind, a, b, c = q.get()
+            if kind == "item":
+                yield f"data: {json.dumps({'type': 'item', 'done': a, 'total': b, 'record': c}, ensure_ascii=False)}\n\n"
+            elif kind == "done":
+                yield f"data: {json.dumps({'type': 'done', 'total': a, 'success': b, 'rate': c}, ensure_ascii=False)}\n\n"
+                break
+            elif kind == "cancelled":
+                yield f"data: {json.dumps({'type': 'cancelled'}, ensure_ascii=False)}\n\n"
+                break
+            elif kind == "error":
+                yield f"data: {json.dumps({'type': 'error', 'message': str(c)}, ensure_ascii=False)}\n\n"
+                break
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

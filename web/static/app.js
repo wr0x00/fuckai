@@ -481,6 +481,9 @@ createApp({
                 manual: '',
                 sample_size: 10,
                 use_all: false,
+                useConcurrency: false,
+                concurrency: 4,
+                timeout: 120,
                 converter_ids: ['direct'],
                 payload_name: '',
                 samples: [],
@@ -489,6 +492,8 @@ createApp({
             abort: null,
             runRows: [],
             planTotal: 0,
+            runId: '',
+            planConcurrency: 0,
             doneCount: 0,
             lastSummary: null,
             upd: { repo_url: '', result: '', ok: true },
@@ -1205,6 +1210,11 @@ createApp({
         },
 
         resetRun() {
+            // Real cancel: tell the backend to stop dispatching remaining tasks, then drop the SSE
+            if (this.runId) {
+                this.api('/api/attack/cancel', { method: 'POST', body: JSON.stringify({ run_id: this.runId }) })
+                    .catch(() => {});
+            }
             if (this.abort) this.abort.abort();
             this.running = false;
         },
@@ -1222,6 +1232,7 @@ createApp({
             this.running = true;
             this.runRows = [];
             this.doneCount = 0;
+            this.runId = '';
             this.lastSummary = null;
             const ctrl = new AbortController();
             this.abort = ctrl;
@@ -1238,6 +1249,11 @@ createApp({
                         objective_group: imported.length ? '' : this.atk.objective_group,
                         sample_size: this.atk.sample_size,
                         use_all: this.atk.use_all,
+                        // Serial (concurrency=1) unless "Use concurrency" is checked, to avoid provider rate limits
+                        concurrency: this.atk.useConcurrency ?
+                            Math.min(16, Math.max(1, Math.round(this.atk.concurrency || 4))) : 1,
+                        // Per-request timeout in seconds (30-3600)
+                        timeout: Math.min(3600, Math.max(30, Math.round(this.atk.timeout || 120))),
                     }),
                     signal: ctrl.signal,
                 });
@@ -1262,23 +1278,34 @@ createApp({
                         const ev = JSON.parse(line.slice(6));
                         if (ev.type === 'start') {
                             this.planTotal = ev.total;
+                            this.runId = ev.run_id || '';
+                            this.planConcurrency = ev.concurrency || 1;
                         } else if (ev.type === 'item') {
-                            this.runRows.push({...ev.record, id: ++uid });
                             this.doneCount = ev.done;
                             this.planTotal = ev.total;
-                            this.$nextTick(this.scrollStream);
+                            if (ev.record) {
+                                this.runRows.push({...ev.record, id: ++uid });
+                                this.$nextTick(this.scrollStream);
+                            }
                         } else if (ev.type === 'done') {
                             this.lastSummary = { total: ev.total, success: ev.success, rate: ev.rate };
+                        } else if (ev.type === 'cancelled') {
+                            this.notify('Stopped: remaining tasks cancelled');
+                        } else if (ev.type === 'error') {
+                            this.notify('Run error: ' + (ev.message || 'unknown'), 'err');
                         }
                     }
                 }
-                this.notify('Attack complete');
+                if (this.lastSummary) {
+                    this.notify(`Attack complete: success rate ${this.lastSummary.rate}% (${this.lastSummary.success}/${this.lastSummary.total})`);
+                }
                 await this.loadRecords();
             } catch (e) {
                 if (e.name !== 'AbortError') this.notify('Run failed: ' + e.message, 'err');
             } finally {
                 this.running = false;
                 this.abort = null;
+                this.runId = '';
             }
         },
 

@@ -764,8 +764,25 @@
               <button class="btn btn-primary" @click="runAttack" :disabled="running">
                 {{ running ? '执行中…' : '开始攻击' }}
               </button>
-              <button class="btn btn-ghost" @click="resetRun" :disabled="!running">停止</button>
-              <span class="muted" v-if="planTotal">计划 {{ planTotal }} 次请求</span>
+              <button class="btn btn-danger" @click="resetRun" :disabled="!running">停止</button>
+              <span class="muted" v-if="planTotal">计划 {{ planTotal }} 次请求 · {{ atk.useConcurrency ? '并发 ' + planConcurrency : '串行' }}</span>
+            </div>
+            <div class="atk-runopts">
+              <div class="opt-row">
+                <label class="check"><input type="checkbox" v-model="atk.useConcurrency" :disabled="running"> 使用并发</label>
+                <input v-if="atk.useConcurrency" class="input num-sm" type="number" min="1" max="16" v-model.number="atk.concurrency"
+                       :disabled="running" title="同时进行的请求数"
+                       @change="atk.concurrency = Math.min(16, Math.max(1, Math.round(atk.concurrency || 4)))">
+                <span v-if="atk.useConcurrency" class="muted hint-warn">注意模型厂商是否有限流措施</span>
+              </div>
+              <div class="opt-row">
+                <label class="field-inline"><span class="opt-label">超时</span>
+                  <input class="input num-sm" type="number" min="30" max="3600" step="30" v-model.number="atk.timeout"
+                         :disabled="running" title="单个模型请求的超时秒数">
+                  <span class="muted">秒/请求</span>
+                </label>
+                <span class="muted opt-note">单个模型请求的最长等待时间，仅对攻击测试生效（连接测试超时在设置页单独配置）</span>
+              </div>
             </div>
           </div>
 
@@ -1155,6 +1172,6 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
-<script src="/static/zh/app.js?v=7"></script>
+<script src="/static/zh/app.js?v=12"></script>
 </body>
 </html>

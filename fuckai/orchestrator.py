@@ -20,7 +20,9 @@
         ▼
     Memory.save()                 ← 落盘 SQLite，可导出报告
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from threading import Event
 
 from fuckai.client import ChatClient
 from fuckai.config import AppConfig
@@ -28,6 +30,13 @@ from fuckai.converters import PromptConverter
 from fuckai.memory import Memory
 from fuckai.payloads import Payload
 from fuckai.scorer import TrueFalseScorer
+
+# 批量攻击默认并发数（同时进行的 LLM 调用数）
+DEFAULT_CONCURRENCY = 4
+
+
+class AttackCancelled(Exception):
+    """批量攻击被用户取消。"""
 
 
 class Orchestrator:
@@ -37,11 +46,11 @@ class Orchestrator:
 
         self.attack_client = ChatClient(
             a.base_url, a.api_key, a.model,
-            temperature=a.temperature, timeout=atk.timeout, max_tokens=atk.max_tokens,
+            temperature=a.temperature, timeout=atk.timeout, max_tokens=None,
         )
         self.target_client = ChatClient(
             t.base_url, t.api_key, t.model,
-            temperature=t.temperature, timeout=atk.timeout, max_tokens=atk.max_tokens,
+            temperature=t.temperature, timeout=atk.timeout, max_tokens=None,
         )
         self.converter = PromptConverter(self.attack_client, atk.variation_count)
         self.scorer = TrueFalseScorer(self.attack_client)
@@ -109,17 +118,58 @@ class Orchestrator:
         return record
 
     def run_batch(self, objectives: list[str], converter_ids: list[str],
-                  payload: Payload | None = None, verbose: bool = True) -> list[dict]:
+                  payload: Payload | None = None, verbose: bool = True,
+                  cancel: Event | None = None, progress=None,
+                  concurrency: int = DEFAULT_CONCURRENCY,
+                  timeout: int | None = None) -> list[dict]:
+        """并发执行批量攻击。
+
+        cancel: threading.Event，置位后未开始的任务跳过执行，在途任务跑完即止。
+        progress: callable(done, total, record|None)，每完成一个任务回调一次（取消跳过的任务也回调）。
+        timeout: 覆盖单请求超时秒数（None=用构造时的默认值）。
+        被取消时抛出 AttackCancelled。
+        """
+        if timeout is not None and timeout > 0:
+            # 两个客户端共享本次运行的超时设置
+            self.attack_client.timeout = timeout
+            self.target_client.timeout = timeout
+        tasks = [(o, c) for o in objectives for c in converter_ids]
+        total = len(tasks)
         results = []
-        total = len(objectives) * len(converter_ids)
         done = 0
-        for objective in objectives:
-            for cid in converter_ids:
+        workers = max(1, min(concurrency, total))
+
+        def _one(objective, cid):
+            if cancel is not None and cancel.is_set():
+                return None  # 已取消：跳过未开始的任务
+            return self.run(objective, cid, payload=payload, verbose=False)
+
+        if verbose:
+            pl = f" 提示词模板={payload.name}" if payload else ""
+            print(f"\n批量攻击 {total} 项，并发={workers}{pl}")
+
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(_one, o, c): (o, c) for o, c in tasks}
+            for fut in as_completed(futures):
                 done += 1
+                rec = None
+                try:
+                    rec = fut.result()
+                except Exception as e:  # 单项异常不拖垮整批
+                    o, c = futures[fut]
+                    rec = self._fail(c, o, payload, f"[异常] {e}", verbose=False)
+                if progress is not None:
+                    try:
+                        progress(done, total, rec)
+                    except Exception:
+                        pass
+                if rec is not None:
+                    results.append(rec)
                 if verbose:
-                    pl = f" 提示词模板={payload.name}" if payload else ""
-                    print(f"\n[{done}/{total}] 变换器={cid}{pl}  话题={objective[:60]}")
-                results.append(self.run(objective, cid, payload=payload, verbose=verbose))
+                    print(f"[{done}/{total}] 完成")
+
+        if cancel is not None and cancel.is_set():
+            raise AttackCancelled()
         return results
 
     @staticmethod
