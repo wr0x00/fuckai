@@ -472,7 +472,7 @@ createApp({
                 preset: '',
                 system_prompt: '',
                 sentText: '',
-                max_tokens: 1024,
+                max_tokens: 0,
                 attachments: [],
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             },
@@ -993,7 +993,7 @@ createApp({
                 preset: '',
                 system_prompt: '',
                 sentText: '',
-                max_tokens: this.cfg.max_tokens || 1024,
+                max_tokens: 0,
                 attachments: [],
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             };
@@ -1187,6 +1187,90 @@ createApp({
                 this.chat.streaming = false;
                 this.chatSessionsRefresh();
                 this.chatScroll();
+            }
+        },
+
+        /* Resend the edited "Actually sent" payload: messages is the final content, no re-assembly */
+        async chatResendEdited() {
+            if (this.chat.busy) return;
+            let msgs;
+            try {
+                msgs = JSON.parse(this.chat.sentText);
+            } catch (e) {
+                this.notify('Not valid JSON, cannot resend', 'err');
+                return;
+            }
+            const ok = Array.isArray(msgs) && msgs.length && msgs.every(m =>
+                m && ['user', 'assistant', 'system'].includes(m.role) && typeof m.content === 'string');
+            if (!ok) {
+                this.notify('Format must be [{role: "user"|"assistant"|"system", content: "..."}, ...]', 'err');
+                return;
+            }
+            // Show the resend result separately on the right panel, not in the chat flow
+            this.chat.resend = { busy: true, content: '', thinking: '', elapsed: 0 };
+            this.chat.busy = true;
+            this.chat.streaming = true;
+            try {
+                const resp = await fetch('/api/models/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: this.chat.session_id,
+                        id: this.chat.id,
+                        base_url: this.chat.base_url,
+                        api_key: this.chat.api_key,
+                        model: this.chat.model,
+                        temperature: Number(this.chat.temperature) || 0,
+                        system_prompt: '',
+                        messages: msgs,
+                        raw_messages: true,
+                        max_tokens: this.chat.max_tokens,
+                        context_rounds: 0,
+                        history_mode: 'drop',
+                        history_chars: 300,
+                    }),
+                });
+                if (!resp.ok || !resp.body) {
+                    const errText = await resp.text().catch(() => '');
+                    throw new Error('HTTP ' + resp.status + (errText ? ': ' + errText.slice(0, 200) : ''));
+                }
+                const reader = resp.body.getReader();
+                const dec = new TextDecoder();
+                let buf = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buf += dec.decode(value, { stream: true });
+                    let idx;
+                    while ((idx = buf.indexOf('\n\n')) >= 0) {
+                        const raw = buf.slice(0, idx).trim();
+                        buf = buf.slice(idx + 2);
+                        if (!raw.startsWith('data:')) continue;
+                        let ev;
+                        try { ev = JSON.parse(raw.slice(5)); } catch (e) { continue; }
+                        if (ev.type === 'delta') {
+                            this.chat.resend.content += ev.text;
+                        } else if (ev.type === 'reasoning') {
+                            this.chat.resend.thinking += ev.text;
+                        } else if (ev.type === 'done') {
+                            this.chat.resend.content = ev.reply || this.chat.resend.content;
+                            this.chat.resend.busy = false;
+                            this.chat.resend.elapsed = ev.elapsed_ms || 0;
+                            if (ev.sent) this.chat.sentText = JSON.stringify(ev.sent, null, 2);
+                        } else if (ev.type === 'error') {
+                            this.chat.resend.content += (this.chat.resend.content ? '\n' : '') + '[Failed] ' + ev.error;
+                            this.chat.resend.busy = false;
+                            this.notify('Resend failed: ' + ev.error, 'err');
+                        }
+                    }
+                }
+            } catch (e) {
+                this.chat.resend.content += (this.chat.resend.content ? '\n' : '') + '[Error] ' + e.message;
+                this.chat.resend.busy = false;
+                this.notify('Resend failed: ' + e.message, 'err');
+            } finally {
+                this.chat.busy = false;
+                this.chat.streaming = false;
             }
         },
 
