@@ -1726,6 +1726,20 @@ html[data-theme="dark"] .tag-tgt {
     max-width: 1080px;
 }
 
+
+/* 对话弹窗：固定视口高度，消息区与参数面板各自内部滚动，输入框始终可见 */
+
+.modal-chat {
+    height: 90vh;
+    max-height: 90vh;
+}
+
+.modal-chat .chat-layout {
+    flex: 1;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+}
+
 .modal-head {
     flex: none;
     display: flex;
@@ -1805,8 +1819,7 @@ html[data-theme="dark"] .tag-tgt {
     flex: 1;
     overflow-y: auto;
     padding: 16px 18px;
-    min-height: 340px;
-    max-height: 58vh;
+    min-height: 0;
     background: var(--bg-alt);
 }
 
@@ -1882,8 +1895,8 @@ html[data-theme="dark"] .tag-tgt {
 }
 
 .chat-right {
+    min-height: 0;
     overflow-y: auto;
-    max-height: 58vh;
     padding: 16px 18px 20px;
     background: var(--bg-alt);
 }
@@ -1926,6 +1939,53 @@ html[data-theme="dark"] .tag-tgt {
     word-break: break-word;
     max-height: 220px;
     overflow: auto;
+}
+
+
+/* 「本次实际发送」可编辑框与重发行 */
+
+.chat-sent-edit {
+    width: 100%;
+    resize: vertical;
+    max-height: 260px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.edit-resend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.edit-resend-row .muted {
+    font-size: 12px;
+}
+
+
+/* 编辑重发结果卡（右栏独立展示，不混入对话流） */
+
+.chat-resend-card {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--brand);
+    border-radius: var(--r);
+    background: var(--grad-soft);
+}
+
+.chat-resend-body {
+    font-size: 12.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.chat-resend-body.streaming {
+    cursor: progress;
 }
 
 
@@ -2340,6 +2400,19 @@ html[data-theme="dark"] .tag-tgt {
     .chat-layout {
         grid-template-columns: 1fr;
     }
+    /* 对话弹窗例外：保持双列（弹窗宽度足以容纳右侧参数栏），固定高度内各自滚动 */
+    .modal-chat .chat-layout {
+        grid-template-columns: minmax(0, 1fr) 300px;
+        grid-template-rows: minmax(0, 1fr);
+    }
+    .modal-chat .chat-left {
+        border-right: 1px solid var(--stroke);
+        border-bottom: 0;
+    }
+    .modal-chat .chat-log,
+    .modal-chat .chat-right {
+        max-height: none;
+    }
     .chat-left {
         border-right: 0;
         border-bottom: 1px solid var(--stroke);
@@ -2424,6 +2497,7 @@ html[data-theme="dark"] .tag-tgt {
 /* ---------------- 直接对话：会话列表 / 附件 / 流式 ---------------- */
 
 .chat-sess {
+    flex: none;
     border: 1px solid var(--stroke);
     border-radius: 8px;
     background: var(--bg-alt);
@@ -2447,8 +2521,8 @@ html[data-theme="dark"] .tag-tgt {
 .chat-sess-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    max-height: 140px;
+    gap: 3px;
+    max-height: 86px;
     overflow-y: auto;
 }
 
@@ -2456,7 +2530,7 @@ html[data-theme="dark"] .tag-tgt {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 8px;
+    padding: 4px 8px;
     border: 1px solid transparent;
     border-radius: 6px;
     cursor: pointer;
@@ -2585,6 +2659,7 @@ html[data-theme="dark"] .tag-tgt {
 }
 
 .chat-send-row {
+    flex: none;
     display: flex;
     gap: 8px;
     align-items: flex-end;

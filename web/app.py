@@ -150,6 +150,8 @@ class ChatAttachment(BaseModel):
 class ChatStreamRequest(ChatRequest):
     session_id: str = ""
     attachments: list[ChatAttachment] = Field(default_factory=list)
+    # 编辑重发模式：messages 即最终发送内容，跳过历史拼装与用户消息落盘
+    raw_messages: bool = False
 
 
 class ChatSessionCreate(BaseModel):
@@ -524,7 +526,7 @@ def chat_model(req: ChatRequest) -> dict:
         info["model"],
         req.temperature if req.temperature is not None else info["temperature"],
         int(atk.get("timeout", 120) or 120),
-        int(req.max_tokens or atk.get("max_tokens", 1024) or 1024),
+        (int(req.max_tokens or 0) or None),  # 0/空 = 不限制，不发送 max_tokens 字段
     )
     composed = _compose_messages(req)
     t0 = time.perf_counter()
@@ -704,49 +706,61 @@ def chat_model_stream(req: ChatStreamRequest):
         raise HTTPException(status_code=400, detail="会话不存在，请先创建会话")
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    text = (req.messages[-1].get("content") if req.messages else "") or ""
-    user_msg = {
-        "role": "user",
-        "content": text,
-        "attachments": [
-            {"name": a.name, "mime": a.mime, "size": a.size} for a in req.attachments
-        ],
-        "ts": now,
-    }
+    user_msg = None
+    if req.raw_messages:
+        # 编辑重发：前端给定的 messages 就是最终发送内容（含 system/历史），不再组装
+        composed = [
+            {"role": m.get("role") or "user", "content": m.get("content") or ""}
+            for m in req.messages
+            if (m.get("content") or "").strip()
+        ]
+        if not composed:
+            raise HTTPException(status_code=400, detail="消息数组为空")
+    else:
+        text = (req.messages[-1].get("content") if req.messages else "") or ""
+        user_msg = {
+            "role": "user",
+            "content": text,
+            "attachments": [
+                {"name": a.name, "mime": a.mime, "size": a.size} for a in req.attachments
+            ],
+            "ts": now,
+        }
 
-    # 历史（纯文本）+ 当前消息，走统一的上下文优化策略
-    hist = [
-        {"role": m["role"], "content": m.get("content") or ""}
-        for m in (session.get("messages") or [])
-        if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
-    ]
-    hist.append({"role": "user", "content": text})
-    compose_req = ChatRequest(
-        id=req.id, base_url=req.base_url, api_key=req.api_key, model=req.model,
-        temperature=req.temperature, system_prompt=req.system_prompt,
-        messages=hist, max_tokens=req.max_tokens,
-        context_rounds=req.context_rounds, history_mode=req.history_mode,
-        history_chars=req.history_chars,
-    )
-    composed = _compose_messages(compose_req)
-    if req.attachments:
-        for m in reversed(composed):
-            if m.get("role") == "user":
-                m["content"] = _build_content_parts(text, [a.model_dump() for a in req.attachments])
-                break
+        # 历史（纯文本）+ 当前消息，走统一的上下文优化策略
+        hist = [
+            {"role": m["role"], "content": m.get("content") or ""}
+            for m in (session.get("messages") or [])
+            if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
+        ]
+        hist.append({"role": "user", "content": text})
+        compose_req = ChatRequest(
+            id=req.id, base_url=req.base_url, api_key=req.api_key, model=req.model,
+            temperature=req.temperature, system_prompt=req.system_prompt,
+            messages=hist, max_tokens=req.max_tokens,
+            context_rounds=req.context_rounds, history_mode=req.history_mode,
+            history_chars=req.history_chars,
+        )
+        composed = _compose_messages(compose_req)
+        if req.attachments:
+            for m in reversed(composed):
+                if m.get("role") == "user":
+                    m["content"] = _build_content_parts(text, [a.model_dump() for a in req.attachments])
+                    break
 
     # 用户消息立即落盘（即使后续失败也保留历史）
-    with _chat_sessions_lock:
-        sessions = _load_chat_sessions()
-        for s in sessions:
-            if s.get("id") == session["id"]:
-                s["messages"].append(user_msg)
-                s["updated_at"] = now
-                if (s.get("title") or "新对话") == "新对话" and text:
-                    s["title"] = _clip(text, 20)
-                session = s
-                break
-        _save_chat_sessions(sessions)
+    if user_msg is not None:
+        with _chat_sessions_lock:
+            sessions = _load_chat_sessions()
+            for s in sessions:
+                if s.get("id") == session["id"]:
+                    s["messages"].append(user_msg)
+                    s["updated_at"] = now
+                    if (s.get("title") or "新对话") == "新对话" and text:
+                        s["title"] = _clip(text, 20)
+                    session = s
+                    break
+            _save_chat_sessions(sessions)
 
     atk = _read_config_raw().get("attack") or {}
     client = ChatClient(
@@ -755,7 +769,7 @@ def chat_model_stream(req: ChatStreamRequest):
         info["model"],
         req.temperature if req.temperature is not None else info["temperature"],
         int(atk.get("timeout", 120) or 120),
-        int(req.max_tokens or atk.get("max_tokens", 1024) or 1024),
+        (int(req.max_tokens or 0) or None),  # 0/空 = 不限制，不发送 max_tokens 字段
     )
 
     def _sse(obj: dict) -> str:
@@ -775,17 +789,19 @@ def chat_model_stream(req: ChatStreamRequest):
                     acc.append(delta)
                     yield _sse({"type": "delta", "text": delta})
             reply = "".join(acc)
-            with _chat_sessions_lock:
-                sessions = _load_chat_sessions()
-                for s in sessions:
-                    if s.get("id") == session["id"]:
-                        msg = {"role": "assistant", "content": reply, "ts": now}
-                        if think_acc:
-                            msg["thinking"] = "".join(think_acc)
-                        s["messages"].append(msg)
-                        s["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        break
-                _save_chat_sessions(sessions)
+            # 编辑重发（raw_messages）不落盘：重发结果单独展示在右栏，不混入原会话
+            if not req.raw_messages:
+                with _chat_sessions_lock:
+                    sessions = _load_chat_sessions()
+                    for s in sessions:
+                        if s.get("id") == session["id"]:
+                            msg = {"role": "assistant", "content": reply, "ts": now}
+                            if think_acc:
+                                msg["thinking"] = "".join(think_acc)
+                            s["messages"].append(msg)
+                            s["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            break
+                    _save_chat_sessions(sessions)
             yield _sse({
                 "type": "done",
                 "reply": reply,
