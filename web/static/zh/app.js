@@ -97,10 +97,11 @@ const RecordItem = {
 };
 
 createApp({
-    components: { RecordItem },
+    components: { RecordItem, FuzzPanel: window.FuzzPanel },
     data() {
         return {
             page: 'dash',
+            atkTab: 'pipe',
             dark: localStorage.getItem('fuckai-theme') === 'dark',
             arsenal: JSON.parse(JSON.stringify(emptyArsenal)),
             resources: { projects: [], articles: [] },

@@ -2760,3 +2760,132 @@ html[data-theme="dark"] .tag-tgt {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+
+/* ---------------- LLM 自动化模糊测试（AI Fuzzing） ---------------- */
+
+.fuzz-layout {
+    display: grid;
+    grid-template-columns: 370px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.fuzz-config {
+    padding: 0 0 18px;
+}
+
+.fuzz-config .field {
+    margin: 15px 20px 0;
+}
+
+.fuzz-config .atk-actions {
+    margin: 16px 20px 0;
+}
+
+.fuzz-models {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 14px 20px 0;
+    font-size: 11.5px;
+}
+
+.fuzz-model-name {
+    margin-right: 10px;
+    color: var(--text-2);
+    font-size: 11.5px;
+}
+
+.fuzz-sess {
+    margin: 18px 20px 0;
+}
+
+.fuzz-sess .chat-sess-list {
+    max-height: 150px;
+}
+
+.fuzz-stream {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 196px);
+    min-height: 520px;
+    margin-bottom: 0;
+    overflow: hidden;
+}
+
+.fuzz-log {
+    flex: 1;
+    min-height: 0;
+}
+
+.fuzz-turn {
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--stroke);
+}
+
+.fuzz-turn:last-child {
+    border-bottom: 0;
+    margin-bottom: 0;
+}
+
+
+/* 攻击模型决策框：整体红色 */
+
+.msg.fuzz-decision {
+    max-width: 100%;
+}
+
+.msg.fuzz-decision .msg-role {
+    color: var(--danger);
+}
+
+.msg.fuzz-decision .msg-body {
+    background: var(--danger-bg);
+    border-color: rgba(164, 38, 44, .32);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12.5px;
+}
+
+.fuzz-sub {
+    color: var(--text-3);
+    font-size: 11.5px;
+    margin-top: 3px;
+}
+
+.fuzz-verdict {
+    align-self: flex-start;
+    margin: 6px 0 0;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--stroke);
+    background: var(--bg-sunken);
+    font-size: 11.5px;
+    color: var(--text-3);
+}
+
+.fuzz-verdict.ok {
+    border-color: rgba(164, 38, 44, .32);
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.fuzz-verdict.no {
+    color: var(--text-3);
+}
+
+@media (max-width: 1180px) {
+    .fuzz-layout {
+        grid-template-columns: 1fr;
+    }
+    .fuzz-stream {
+        height: auto;
+        min-height: 0;
+    }
+    .fuzz-log {
+        max-height: 60vh;
+    }
+}

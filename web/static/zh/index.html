@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM 注入攻击测试台</title>
-<link rel="stylesheet" href="/static/styles.css?v=18">
+<link rel="stylesheet" href="/static/styles.css?v=19">
 <script>
 /* 语言守卫：localStorage 选择的不是中文时跳回英文版 */
 (function () {
@@ -701,7 +701,16 @@
 
       <!-- ---------- 攻击 ---------- -->
       <section v-show="page==='attack'" class="page">
-        <div class="atk-layout">
+        <div class="toolbar">
+          <div class="seg" role="tablist">
+            <button class="seg-item" :class="{on: atkTab==='pipe'}" @click="atkTab='pipe'">流水线测试</button>
+            <button class="seg-item" :class="{on: atkTab==='fuzz'}" @click="atkTab='fuzz'">LLM 自动化测试</button>
+          </div>
+          <div class="spacer"></div>
+          <span class="muted" v-if="atkTab==='fuzz'">攻击模型自主挑弹药、改写话题，逐轮推进直到命中目标</span>
+        </div>
+
+        <div class="atk-layout" v-show="atkTab==='pipe'">
           <div class="card atk-config">
             <div class="card-head"><h2 class="card-title">攻击配置</h2></div>
 
@@ -803,6 +812,8 @@
             </div>
           </div>
         </div>
+
+        <fuzz-panel v-show="atkTab==='fuzz'"></fuzz-panel>
       </section>
 
       <!-- ---------- 记录 ---------- -->
@@ -1188,6 +1199,7 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
-<script src="/static/zh/app.js?v=16"></script>
+<script src="/static/zh/fuzz.js?v=1"></script>
+<script src="/static/zh/app.js?v=17"></script>
 </body>
 </html>

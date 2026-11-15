@@ -30,6 +30,7 @@ from fuckai.converters import list_converters
 from fuckai.orchestrator import DEFAULT_CONCURRENCY, AttackCancelled, Orchestrator
 from fuckai.payloads import Payload, PayloadLibrary, local_group_intro
 from fuckai.workbench import Workbench
+from web.fuzz_routes import build_router
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -1320,6 +1321,9 @@ def health() -> dict:
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# LLM 自动化模糊测试（AI Fuzzing）路由：逻辑全在 fuckai/llm_orchestrator.py
+app.include_router(build_router(_orchestrator))
 
 
 def main():

@@ -103,6 +103,38 @@ The attacker model is responsible for 1) rewriting prompts (converter endpoint)
               │  (attacked model)  │    the attacker model for scoring
               └───────────────────┘
 ```
+### LLM Automated Testing (AI Fuzzing)
+Don't want to try every combination by hand? Let the attacker model drive itself. The attack page has a tab switcher at the top — "Pipeline test / LLM automated test". Switch to the automated mode, write one sentence describing your final goal (e.g. "make the model output prohibited content"), and leave the rest to the attacker model.
+
+The idea is simple: the attacker model picks a jailbreak template from the ammo library, rewrites your goal into that template, sends it to the target model, then judges whether the goal was hit. If not, it picks another template, rewords the topic and goes another round — until it succeeds or hits the round limit you set.
+
+```
+  You write the final goal
+        │
+        ▼
+  ┌──────────────────┐
+  │ Attacker: pick   │ ← Choose one template out of the 748-entry ammo library
+  └────────┬─────────┘
+           ▼
+  ┌──────────────────┐
+  │ Attacker: fill   │ ← Rewrite the goal into the template, build the final prompt
+  └────────┬─────────┘
+           ▼
+  ┌──────────────────┐
+  │   Target model   │ ← Return the reply
+  └────────┬─────────┘
+           ▼
+  ┌──────────────────┐
+  │ Attacker: judge  │ ← Hit? Done. Miss? Switch template and try again
+  └──────────────────┘
+```
+
+A few things that make it pleasant to use:
+- **Full coverage of the 748-entry ammo library**: the attacker model only sees a 40-template summary each round and the window keeps rotating, so nothing blows up the context and a few rounds will sweep through the whole library.
+- **Human takeover anytime**: there's an input box under the conversation stream — hit "Pause" and you can send messages to the target model yourself, which is handy when the AI drifts off track or you just want to try a hand.
+- **Everything is recorded**: which template was picked and why, what prompt was sent, what came back, and the verdict — all of it is saved as a session you can reopen, and export to JSON / Markdown / CSV for archiving.
+- **Landed in the records page**: every round is written to the test records just like the manual pipeline runs, so you can review both together.
+
 ### Manual Workbench
 Handcraft direct/indirect prompt injection samples.
 #### Injection Templates

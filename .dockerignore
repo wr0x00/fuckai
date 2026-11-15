@@ -4,6 +4,7 @@ fuckai.db
 *.db
 *.sqlite3
 chat_sessions.json
+fuzz_sessions.json
 my_templates.json
 report.json
 report.csv

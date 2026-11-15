@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM Injection Attack Testing Workbench</title>
-<link rel="stylesheet" href="/static/styles.css?v=18">
+<link rel="stylesheet" href="/static/styles.css?v=19">
 <script>
 /* Language guard: redirect to the Chinese variant if that's the stored choice */
 (function () {
@@ -701,7 +701,16 @@
 
       <!-- ---------- Attack ---------- -->
       <section v-show="page==='attack'" class="page">
-        <div class="atk-layout">
+        <div class="toolbar">
+          <div class="seg" role="tablist">
+            <button class="seg-item" :class="{on: atkTab==='pipe'}" @click="atkTab='pipe'">Pipeline test</button>
+            <button class="seg-item" :class="{on: atkTab==='fuzz'}" @click="atkTab='fuzz'">LLM automated test</button>
+          </div>
+          <div class="spacer"></div>
+          <span class="muted" v-if="atkTab==='fuzz'">The attacker model picks ammunition and rewrites the topic round by round until the objective is hit</span>
+        </div>
+
+        <div class="atk-layout" v-show="atkTab==='pipe'">
           <div class="card atk-config">
             <div class="card-head"><h2 class="card-title">Attack Config</h2></div>
 
@@ -803,6 +812,8 @@
             </div>
           </div>
         </div>
+
+        <fuzz-panel v-show="atkTab==='fuzz'"></fuzz-panel>
       </section>
 
       <!-- ---------- Records ---------- -->
@@ -1188,6 +1199,7 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
-<script src="/static/app.js?v=16"></script>
+<script src="/static/fuzz.js?v=1"></script>
+<script src="/static/app.js?v=17"></script>
 </body>
 </html>
