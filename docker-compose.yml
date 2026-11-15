@@ -1,0 +1,15 @@
+services:
+  fuckai:
+    build: .
+    container_name: fuckai
+    ports:
+      - "8001:8001"
+    volumes:
+      # 首次运行前先执行（单文件挂载要求宿主文件存在）：
+      #   cp config_example.yaml config.yaml
+      #   touch fuckai.db chat_sessions.json my_templates.json
+      - ./config.yaml:/app/config.yaml
+      - ./fuckai.db:/app/fuckai.db
+      - ./chat_sessions.json:/app/chat_sessions.json
+      - ./my_templates.json:/app/my_templates.json
+    restart: unless-stopped

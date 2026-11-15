@@ -1,3 +1,4 @@
 fastapi==0.104.0
 uvicorn==0.26.0
 python-multipart==0.0.33
+pyyaml>=6.0

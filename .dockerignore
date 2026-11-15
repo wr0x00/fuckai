@@ -1,0 +1,25 @@
+# 个人数据：绝不进镜像
+config.yaml
+fuckai.db
+*.db
+*.sqlite3
+chat_sessions.json
+my_templates.json
+report.json
+report.csv
+.env
+
+# Git 与缓存
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+
+# 本地资料与运行产物
+asset/
+outputs/
+*.log
+Dockerfile
+docker-compose.yml
+.dockerignore
