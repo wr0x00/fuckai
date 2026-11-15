@@ -108,6 +108,8 @@ Don't want to try every combination by hand? Let the attacker model drive itself
 
 The idea is simple: the attacker model picks a jailbreak template from the ammo library, rewrites your goal into that template, sends it to the target model, then judges whether the goal was hit. If not, it picks another template, rewords the topic and goes another round — until it succeeds or hits the round limit you set.
 
+Set **Max rounds to 0 for unlimited rounds** — it keeps going until the goal is hit, and you can stop it whenever you like.
+
 ```
   You write the final goal
         │

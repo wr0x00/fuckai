@@ -33,7 +33,7 @@ from fuckai.llm_orchestrator import (
 
 class FuzzRunRequest(BaseModel):
     objective: str = ""
-    max_rounds: int = 10
+    max_rounds: int = 10   # 0 = 不限轮数
     title: str = ""
 
 

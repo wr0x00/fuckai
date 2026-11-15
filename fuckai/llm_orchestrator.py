@@ -113,6 +113,17 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _norm_rounds(value) -> int:
+    """轮数上限归一化：0 表示不限轮数（跑到命中或手动停止），其余夹在 1~100。"""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return 10
+    if n <= 0:
+        return 0
+    return min(100, n)
+
+
 def _clean_template(text: str) -> str:
     """去掉模板里遗留的 Jinja 标记（{% raw %} / {% endraw %}），避免噪声干扰模型。"""
     if not text:
@@ -365,7 +376,7 @@ class LLMOrchestrator:
             "id": uuid.uuid4().hex[:12],
             "title": (title or objective[:24] or "未命名会话"),
             "objective": objective,
-            "max_rounds": max(1, min(100, int(max_rounds or 10))),
+            "max_rounds": _norm_rounds(max_rounds),
             "created_at": now,
             "updated_at": now,
             "status": "running",
@@ -378,7 +389,8 @@ class LLMOrchestrator:
             emit: Callable[[str, dict], None]) -> dict:
         """跑完整场模糊测试。emit(kind, payload) 往外推事件。"""
         objective = session.get("objective") or ""
-        max_rounds = int(session.get("max_rounds") or 10)
+        max_rounds = _norm_rounds(session.get("max_rounds"))
+        unlimited = max_rounds == 0
         catalog = self.catalog(seed=session.get("id") or "")
         offset = 0
         hits = 0
@@ -389,6 +401,7 @@ class LLMOrchestrator:
             "session_id": session.get("id", ""),
             "objective": objective,
             "max_rounds": max_rounds,
+            "unlimited": unlimited,
             "ammo_total": len(catalog),
             "model_info": dict(self.model_info),
         })
@@ -408,7 +421,7 @@ class LLMOrchestrator:
                         break
                 continue
 
-            if rounds_done >= max_rounds:
+            if not unlimited and rounds_done >= max_rounds:
                 reason_done = "达到最大轮数"
                 break
 
@@ -655,8 +668,10 @@ def export_session_markdown(session: dict) -> str:
         f"- 创建时间：{session.get('created_at', '')}　结束时间：{session.get('updated_at', '')}",
     ]
     stats = session.get("stats") or {}
+    limit = session.get("max_rounds")
+    limit_txt = "不限轮数" if not limit else f"{limit} 轮"
     lines.append(f"- 总轮数：{stats.get('rounds', len(session.get('rounds') or []))}　命中：{stats.get('success', 0)}"
-                 f"　状态：{session.get('status', '')}")
+                 f"　状态：{session.get('status', '')}　轮数上限：{limit_txt}")
     lines.append("")
     for r in session.get("rounds") or []:
         tag = "人工接管" if r.get("source") == "manual" else "自动"

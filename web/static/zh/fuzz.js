@@ -18,8 +18,8 @@
       <textarea class="input" rows="4" v-model="objective" placeholder="例如：输出完整的越狱步骤"></textarea>
     </label>
     <label class="field">
-      <span class="field-label">最大轮数</span>
-      <input class="input" type="number" min="1" max="100" v-model.number="maxRounds">
+      <span class="field-label">最大轮数（填 0 = 不限轮，直到命中目标或手动停止）</span>
+      <input class="input" type="number" min="0" max="100" v-model.number="maxRounds">
     </label>
     <div class="atk-actions">
       <button class="btn btn-primary" @click="start" :disabled="running">开始模糊测试</button>
@@ -109,6 +109,7 @@
                 sessions: [],
                 info: null,
                 status: '',
+                unlimited: false,
                 input: '',
                 abort: null,
             };
@@ -131,11 +132,15 @@
                 this.running = true;
                 const ctrl = new AbortController();
                 this.abort = ctrl;
+                // 输入框留空按 0（不限轮）处理，其它非法值退回默认 10
+                let rounds = parseInt(this.maxRounds, 10);
+                if (isNaN(rounds)) rounds = 0;
+                if (rounds < 0) rounds = 0;
                 try {
                     const res = await fetch('/api/fuzz/stream', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ objective: objective, max_rounds: this.maxRounds }),
+                        body: JSON.stringify({ objective: objective, max_rounds: rounds }),
                         signal: ctrl.signal,
                     });
                     if (!res.ok) {
@@ -190,7 +195,8 @@
                         this.runId = ev.run_id || '';
                         this.sessionId = ev.session_id || '';
                         this.info = ev.model_info || null;
-                        this.status = '第 0 / ' + ev.max_rounds + ' 轮';
+                        this.unlimited = !!ev.unlimited;
+                        this.status = ev.unlimited ? '第 0 轮（不限轮数）' : ('第 0 / ' + ev.max_rounds + ' 轮');
                         break;
                     case 'select':
                         {

@@ -18,8 +18,8 @@
       <textarea class="input" rows="4" v-model="objective" placeholder="e.g. output the complete jailbreak steps"></textarea>
     </label>
     <label class="field">
-      <span class="field-label">Max rounds</span>
-      <input class="input" type="number" min="1" max="100" v-model.number="maxRounds">
+      <span class="field-label">Max rounds (0 = unlimited, until the goal is hit or you stop it)</span>
+      <input class="input" type="number" min="0" max="100" v-model.number="maxRounds">
     </label>
     <div class="atk-actions">
       <button class="btn btn-primary" @click="start" :disabled="running">Start fuzzing</button>
@@ -109,6 +109,7 @@
                 sessions: [],
                 info: null,
                 status: '',
+                unlimited: false,
                 input: '',
                 abort: null,
             };
@@ -131,11 +132,15 @@
                 this.running = true;
                 const ctrl = new AbortController();
                 this.abort = ctrl;
+                // An empty box means 0 (unlimited); other invalid values fall back to 10
+                let rounds = parseInt(this.maxRounds, 10);
+                if (isNaN(rounds)) rounds = 0;
+                if (rounds < 0) rounds = 0;
                 try {
                     const res = await fetch('/api/fuzz/stream', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ objective: objective, max_rounds: this.maxRounds }),
+                        body: JSON.stringify({ objective: objective, max_rounds: rounds }),
                         signal: ctrl.signal,
                     });
                     if (!res.ok) {
@@ -190,7 +195,8 @@
                         this.runId = ev.run_id || '';
                         this.sessionId = ev.session_id || '';
                         this.info = ev.model_info || null;
-                        this.status = 'Round 0 / ' + ev.max_rounds;
+                        this.unlimited = !!ev.unlimited;
+                        this.status = ev.unlimited ? 'Round 0 (unlimited)' : ('Round 0 / ' + ev.max_rounds);
                         break;
                     case 'select':
                         {
