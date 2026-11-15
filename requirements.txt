@@ -1,4 +1,15 @@
-fastapi==0.104.0
-uvicorn==0.26.0
-python-multipart==0.0.33
+# fuckai 依赖清单
+# 安装：pip install -r requirements.txt
+# 内嵌浏览器引擎还需下载 Chromium：python -m playwright install chromium
+
+# Web 框架与 ASGI 服务器
+fastapi>=0.104
+# [standard] extra 包含 websockets —— AI Safety HOT 画面串流的 WebSocket 通道依赖它
+uvicorn[standard]>=0.26
+python-multipart>=0.0.6
+
+# 配置 / 弹药库 / 精选资料等 YAML 解析
 pyyaml>=6.0
+
+# 内嵌浏览器引擎（AI Safety HOT）：驱动真实 Chromium（Blink）渲染与 CDP 串流
+playwright>=1.40

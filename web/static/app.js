@@ -17,6 +17,7 @@ const ICO = {
     score: '<svg viewBox="0 0 24 24" fill="none"><path d="m4 12.5 5 5L20 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     save: '<svg viewBox="0 0 24 24" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M17 21v-8H7v8M7 3v5h8" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
     workbench: '<svg viewBox="0 0 24 24" fill="none"><path d="M9.5 2.8v5.6L4.7 16.6A2.5 2.5 0 0 0 6.9 20.5h10.2a2.5 2.5 0 0 0 2.2-3.9l-4.8-8.2V2.8" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.4 2.8h7.2M8 14.2h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    hot: '<svg viewBox="0 0 24 24" fill="none"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
 };
 
 const emptyArsenal = {
@@ -405,7 +406,7 @@ const RecordItem = {
 };
 
 createApp({
-    components: { RecordItem, FuzzPanel: window.FuzzPanel },
+    components: { RecordItem, FuzzPanel: window.FuzzPanel, HotPanel: window.HotPanel },
     data() {
         return {
             page: 'dash',
@@ -581,6 +582,7 @@ createApp({
                 { key: 'models', label: 'Models', icon: ICO.robot, sub: 'Multi-model config & direct testing' },
                 { key: 'settings', label: 'Settings', icon: ICO.settings, sub: 'Language & appearance' },
                 { key: 'update', label: 'Update from GitHub', icon: ICO.update, sub: 'Pull latest source' },
+                { key: 'hot', label: 'AI Safety HOT', icon: ICO.hot, sub: 'AI safety news (embedded browser)' },
                 { key: 'resources', label: 'Curated Resources', icon: ICO.link, sub: 'Featured projects & articles' },
             ];
         },

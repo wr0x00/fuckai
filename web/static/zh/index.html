@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM 注入攻击测试台</title>
-<link rel="stylesheet" href="/static/styles.css?v=19">
+<link rel="stylesheet" href="/static/styles.css?v=24">
 <script>
 /* 语言守卫：localStorage 选择的不是中文时跳回英文版 */
 (function () {
@@ -936,6 +936,9 @@
       </section>
 
       <!-- ---------- 精选资料 ---------- -->
+      <!-- ---------- AI Safety HOT（内嵌浏览器） ---------- -->
+      <hot-panel v-show="page==='hot'"></hot-panel>
+
       <section v-show="page==='resources'" class="page">
         <div class="card">
           <div class="card-head"><h2 class="card-title">优秀开源项目</h2></div>
@@ -1199,7 +1202,8 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/zh/hot.js?v=9"></script>
 <script src="/static/zh/fuzz.js?v=2"></script>
-<script src="/static/zh/app.js?v=17"></script>
+<script src="/static/zh/app.js?v=18"></script>
 </body>
 </html>

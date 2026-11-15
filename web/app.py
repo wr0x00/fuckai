@@ -31,6 +31,7 @@ from fuckai.orchestrator import DEFAULT_CONCURRENCY, AttackCancelled, Orchestrat
 from fuckai.payloads import Payload, PayloadLibrary, local_group_intro
 from fuckai.workbench import Workbench
 from web.fuzz_routes import build_router
+from web.engine_routes import build_router as build_engine_router
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -1324,6 +1325,26 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # LLM 自动化模糊测试（AI Fuzzing）路由：逻辑全在 fuckai/llm_orchestrator.py
 app.include_router(build_router(_orchestrator))
+
+# 内嵌浏览器引擎（AI Safety HOT）：真实 Chromium 画面串流 + 交互转发
+app.include_router(build_engine_router())
+
+
+@app.on_event("startup")
+async def _warm_engine():
+    """服务启动即后台预热内嵌浏览器引擎，用户点开面板时页面已加载完成。"""
+    import asyncio as _asyncio
+
+    from fuckai.browser_engine import engine
+
+    _asyncio.create_task(engine.page())
+
+
+@app.on_event("shutdown")
+async def _shutdown_engine():
+    from fuckai.browser_engine import engine
+
+    await engine.shutdown()
 
 
 def main():

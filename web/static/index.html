@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM Injection Attack Testing Workbench</title>
-<link rel="stylesheet" href="/static/styles.css?v=19">
+<link rel="stylesheet" href="/static/styles.css?v=24">
 <script>
 /* Language guard: redirect to the Chinese variant if that's the stored choice */
 (function () {
@@ -955,6 +955,9 @@
       </section>
 
       <!-- ---------- Curated resources ---------- -->
+      <!-- ---------- AI Safety HOT (embedded browser) ---------- -->
+      <hot-panel v-show="page==='hot'"></hot-panel>
+
       <section v-show="page==='resources'" class="page">
         <div class="card">
           <div class="card-head"><h2 class="card-title">Featured Open-Source Projects</h2></div>
@@ -1199,7 +1202,8 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/hot.js?v=9"></script>
 <script src="/static/fuzz.js?v=2"></script>
-<script src="/static/app.js?v=17"></script>
+<script src="/static/app.js?v=18"></script>
 </body>
 </html>
