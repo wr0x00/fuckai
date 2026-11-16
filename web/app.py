@@ -32,6 +32,7 @@ from fuckai.payloads import Payload, PayloadLibrary, local_group_intro
 from fuckai.workbench import Workbench
 from web.fuzz_routes import build_router
 from web.engine_routes import build_router as build_engine_router
+from web.mcp_routes import build_router as build_mcp_router
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -154,6 +155,8 @@ class ChatStreamRequest(ChatRequest):
     attachments: list[ChatAttachment] = Field(default_factory=list)
     # 编辑重发模式：messages 即最终发送内容，跳过历史拼装与用户消息落盘
     raw_messages: bool = False
+    # 是否允许模型调用 MCP 工具
+    use_mcp: bool = False
 
 
 class ChatSessionCreate(BaseModel):
@@ -781,15 +784,79 @@ def chat_model_stream(req: ChatStreamRequest):
         t0 = time.perf_counter()
         acc: list[str] = []
         think_acc: list[str] = []
+        tool_calls: list[dict] = []   # MCP 工具调用记录，落盘到会话消息里
         yield _sse({"type": "meta", "model": client.model})
+
+        # MCP 工具：拿到已连接服务器的工具清单（OpenAI function 格式）
+        tools: list[dict] = []
+        if req.use_mcp:
+            try:
+                from fuckai.mcp import get_mcp_manager
+
+                tools = get_mcp_manager().openai_tools()
+                yield _sse({"type": "mcp_tools", "count": len(tools),
+                            "names": [t.get("function", {}).get("name", "") for t in tools]})
+                if not tools:
+                    yield _sse({"type": "mcp_warn",
+                                "error": "没有可用的 MCP 工具，请先在 MCP 面板连接服务器"})
+            except Exception as e:  # noqa: BLE001
+                yield _sse({"type": "mcp_warn", "error": f"MCP 初始化失败：{e}"})
+
         try:
-            for kind, delta in client.chat_stream(composed):
-                if kind == "reasoning":
-                    think_acc.append(delta)
-                    yield _sse({"type": "reasoning", "text": delta})
-                else:
-                    acc.append(delta)
-                    yield _sse({"type": "delta", "text": delta})
+            if tools:
+                # 带工具的多轮编排：模型 → 调工具 → 回填 → 模型继续
+                from fuckai.mcp import run_chat_with_tools
+
+                for ev in run_chat_with_tools(client, composed, tools):
+                    etype = ev.get("type")
+                    if etype == "reasoning":
+                        think_acc.append(ev.get("text", ""))
+                        yield _sse({"type": "reasoning", "text": ev.get("text", "")})
+                    elif etype == "delta":
+                        acc.append(ev.get("text", ""))
+                        yield _sse({"type": "delta", "text": ev.get("text", "")})
+                    elif etype == "tool_start":
+                        rec = {
+                            "id": ev.get("id", ""),
+                            "name": ev.get("name", ""),
+                            "server": "",
+                            "args": ev.get("args", {}),
+                            "result": "",
+                            "state": "running",
+                            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                        tool_calls.append(rec)
+                        yield _sse({"type": "tool_start", "id": ev.get("id", ""),
+                                    "name": ev.get("name", ""), "args": ev.get("args", {})})
+                    elif etype == "tool_end":
+                        rec = next((t for t in tool_calls if t["id"] == ev.get("id", "")), None)
+                        if rec is None:
+                            rec = {
+                                "id": ev.get("id", ""),
+                                "name": ev.get("name", ""),
+                                "server": "",
+                                "args": ev.get("args", {}),
+                                "result": "",
+                                "state": "running",
+                                "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            }
+                            tool_calls.append(rec)
+                        rec["result"] = ev.get("result", "")
+                        rec["server"] = ev.get("server", "")
+                        rec["state"] = "done"
+                        yield _sse({"type": "tool_end", "id": ev.get("id", ""),
+                                    "name": ev.get("name", ""), "server": ev.get("server", ""),
+                                    "args": ev.get("args", {}), "result": ev.get("result", "")})
+                    elif etype == "mcp_warn":
+                        yield _sse({"type": "mcp_warn", "error": ev.get("error", "")})
+            else:
+                for kind, delta in client.chat_stream(composed):
+                    if kind == "reasoning":
+                        think_acc.append(delta)
+                        yield _sse({"type": "reasoning", "text": delta})
+                    elif kind == "content":
+                        acc.append(delta)
+                        yield _sse({"type": "delta", "text": delta})
             reply = "".join(acc)
             # 编辑重发（raw_messages）不落盘：重发结果单独展示在右栏，不混入原会话
             if not req.raw_messages:
@@ -800,6 +867,8 @@ def chat_model_stream(req: ChatStreamRequest):
                             msg = {"role": "assistant", "content": reply, "ts": now}
                             if think_acc:
                                 msg["thinking"] = "".join(think_acc)
+                            if tool_calls:
+                                msg["tools"] = tool_calls
                             s["messages"].append(msg)
                             s["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             break
@@ -1328,6 +1397,9 @@ app.include_router(build_router(_orchestrator))
 
 # 内嵌浏览器引擎（AI Safety HOT）：真实 Chromium 画面串流 + 交互转发
 app.include_router(build_engine_router())
+
+# MCP（Model Context Protocol）路由：服务器配置 / 连接 / 工具列表 / 工具调用
+app.include_router(build_mcp_router())
 
 
 @app.on_event("startup")

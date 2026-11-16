@@ -56,7 +56,8 @@ class ChatClient:
         return text
 
     # ---- 流式对话：逐段产出回复文本（OpenAI 兼容 SSE） ----
-    def chat_stream(self, messages: list[dict], temperature: float | None = None):
+    def chat_stream(self, messages: list[dict], temperature: float | None = None,
+                    tools: list[dict] | None = None):
         if not self.base_url or not self.model:
             raise RuntimeError("模型端点未配置：请先在 config.yaml 里填写 base_url 和 model")
         url = f"{self.base_url}/chat/completions"
@@ -68,6 +69,10 @@ class ChatClient:
         }
         if self.max_tokens is not None:
             payload["max_tokens"] = self.max_tokens
+        if tools:
+            # 工具调用（MCP）：function-calling 格式
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
@@ -93,7 +98,11 @@ class ChatClient:
                     raise RuntimeError(f"上游返回错误: {base_resp.get('status_msg') or base_resp}")
                 choices = data.get("choices") or []
                 if choices:
-                    text = (choices[0].get("message") or {}).get("content") or ""
+                    msg = choices[0].get("message") or {}
+                    tcs = msg.get("tool_calls")
+                    if tcs:
+                        yield ("tool_call", tcs)
+                    text = msg.get("content") or ""
                     if text:
                         yield ("content", text)
                 return
@@ -123,6 +132,10 @@ class ChatClient:
                 text = delta.get("content")
                 if text:
                     yield ("content", text)
+                # 工具调用分片（MCP）：按 index 累积，见 fuckai/mcp.py merge_tool_calls
+                tcs = delta.get("tool_calls")
+                if tcs:
+                    yield ("tool_call", tcs)
 
     def ping(self) -> str:
         return self.chat([{"role": "user", "content": "Reply with exactly: PONG"}], temperature=0.0)

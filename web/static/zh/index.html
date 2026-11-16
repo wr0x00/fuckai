@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM 注入攻击测试台</title>
-<link rel="stylesheet" href="/static/styles.css?v=24">
+<link rel="stylesheet" href="/static/styles.css?v=26">
 <script>
 /* 语言守卫：localStorage 选择的不是中文时跳回英文版 */
 (function () {
@@ -1087,6 +1087,16 @@
                 </span>
               </div>
               <div class="msg-think" v-if="m.thinking">思考过程：{{ m.thinking }}</div>
+              <div class="msg-tools" v-if="m.tools && m.tools.length">
+                <div class="msg-tool" v-for="(t,j) in m.tools" :key="j">
+                  <div class="msg-tool-h">
+                    <span class="msg-tool-name mono">⚡ {{ t.name }}</span>
+                    <span class="msg-tool-state" :class="t.state">{{ t.state === 'running' ? '调用中…' : '完成' }}</span>
+                  </div>
+                  <div class="msg-tool-args mono" v-if="t.args && Object.keys(t.args).length">{{ JSON.stringify(t.args) }}</div>
+                  <div class="msg-tool-res" v-if="t.result">{{ t.result }}</div>
+                </div>
+              </div>
               <div class="msg-body">{{ m.content }}</div>
             </div>
           </div>
@@ -1100,9 +1110,15 @@
               </div>
             </div>
             <div class="chat-send-row">
-              <button class="icon-btn" @click="$refs.chatFileInput.click()" title="添加图片 / 文件 / 视频等多模态附件">
-                <svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66L9.4 17.4a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              <div class="chat-send-side">
+                <button class="icon-btn icon-btn-mcp" :class="{ on: chat.mcpEnabled }"
+                        @click="mcpOpen" title="MCP 服务器管理（模型可直接调用其工具）">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10.5H13V2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="icon-btn" @click="$refs.chatFileInput.click()" title="添加图片 / 文件 / 视频等多模态附件">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66L9.4 17.4a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
               <input type="file" ref="chatFileInput" multiple hidden
                      accept="image/*,video/*,audio/*,.pdf,.txt,.md,.json,.csv,.py,.js,.html,.yaml,.yml,.log"
                      @change="chatPickFiles">
@@ -1111,6 +1127,7 @@
             </div>
             <div class="chat-send-ops">
               <span class="muted">Ctrl+Enter 发送 · 上下文 {{ chat.ctx.enabled ? ('保留 ' + chat.ctx.rounds + ' 轮 / ' + chat.ctx.mode) : '关闭' }}</span>
+              <label class="check chat-mcp-check"><input type="checkbox" v-model="chat.mcpEnabled"> 允许模型调用 MCP 工具</label>
               <div class="spacer"></div>
               <button class="btn btn-ghost" @click="chatClear" :disabled="!chat.messages.length">清空</button>
               <button class="btn btn-primary" @click="chatSend" :disabled="chat.busy || (!chat.input.trim() && !chat.attachments.length)">
@@ -1198,12 +1215,93 @@
     </div>
   </div>
 
+  <!-- ============ MCP 服务器弹窗 ============ -->
+  <div class="modal-mask modal-mask-top" v-if="mcp.show" @click.self="mcp.show=false">
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <span class="modal-title">MCP 服务器</span>
+        <span class="chip chip-static mono" v-if="!mcp.sdk">未安装 MCP SDK</span>
+        <span class="chip chip-static mono" v-else>{{ mcp.tools.length }} 个工具可用</span>
+        <div class="spacer"></div>
+        <button class="icon-btn" @click="mcp.show=false" title="关闭">
+          <svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="modal-body mcp-body">
+        <div class="mcp-list">
+          <div class="mcp-list-head">
+            <span class="mcp-list-t">已配置的服务器</span>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm" @click="mcpConnectAll">全部连接</button>
+            <button class="btn btn-primary btn-sm" @click="mcpNew">＋ 新增</button>
+          </div>
+          <div class="mcp-item" v-for="s in mcp.servers" :key="s.name"
+               :class="{ on: mcp.editing && mcp.editing.name === s.name }">
+            <div class="mcp-item-main">
+              <span class="mcp-item-name">{{ s.name }}</span>
+              <span class="badge badge-idle">{{ s.transport }}</span>
+              <span class="badge" :class="s.state === 'connected' ? 'badge-ok' : (s.state === 'error' ? 'badge-err' : 'badge-idle')">
+                {{ s.state === 'connected' ? '已连接' : (s.state === 'error' ? '失败' : '未连接') }}
+              </span>
+              <span class="muted" v-if="s.tools">{{ s.tools }} 个工具</span>
+            </div>
+            <div class="mcp-item-err" v-if="s.error">{{ s.error }}</div>
+            <div class="mcp-item-ops">
+              <button class="btn btn-ghost btn-sm" @click="mcpEdit(s)">编辑</button>
+              <button class="btn btn-ghost btn-sm" @click="mcpConnect(s)" v-if="s.state !== 'connected'">连接</button>
+              <button class="btn btn-ghost btn-sm" @click="mcpDisconnect(s)" v-else>断开</button>
+              <button class="btn btn-ghost btn-sm btn-danger" @click="mcpDelete(s)">删除</button>
+            </div>
+          </div>
+          <div class="empty" v-if="!mcp.servers.length">还没有配置 MCP 服务器，点「＋ 新增」添加一个。</div>
+        </div>
+
+        <div class="mcp-form" v-if="mcp.editing">
+          <div class="mcp-list-t">服务器配置</div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">名称</span>
+              <input class="input" v-model="mcp.editing.name" placeholder="例如：filesystem"></label>
+            <label class="field"><span class="field-label">传输方式</span>
+              <select class="input" v-model="mcp.editing.transport">
+                <option value="stdio">stdio（本地启动进程）</option>
+                <option value="sse">sse（HTTP + SSE）</option>
+                <option value="http">http（Streamable HTTP）</option>
+              </select></label>
+          </div>
+          <template v-if="mcp.editing.transport === 'stdio'">
+            <label class="field"><span class="field-label">启动命令</span>
+              <input class="input mono" v-model="mcp.editing.command" placeholder="例如：npx"></label>
+            <label class="field"><span class="field-label">参数（每行一个）</span>
+              <textarea class="input mono" rows="3" v-model="mcp.editing.args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\workspace"></textarea></label>
+            <label class="field"><span class="field-label">环境变量（每行 KEY=VALUE）</span>
+              <textarea class="input mono" rows="2" v-model="mcp.editing.env" placeholder="API_KEY=xxx"></textarea></label>
+          </template>
+          <template v-else>
+            <label class="field"><span class="field-label">服务地址</span>
+              <input class="input mono" v-model="mcp.editing.url" placeholder="http://127.0.0.1:3000/mcp"></label>
+            <label class="field"><span class="field-label">请求头（每行 KEY=VALUE）</span>
+              <textarea class="input mono" rows="2" v-model="mcp.editing.headers" placeholder="Authorization=Bearer xxx"></textarea></label>
+          </template>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">超时（秒）</span>
+              <input class="input" type="number" min="5" max="600" v-model.number="mcp.editing.timeout"></label>
+            <label class="field mcp-field-check"><span class="field-label">启用</span>
+              <label class="check"><input type="checkbox" v-model="mcp.editing.enabled"> 连接该服务器</label></label>
+          </div>
+          <div class="mcp-form-foot">
+            <button class="btn btn-primary" @click="mcpSave" :disabled="mcp.busy">{{ mcp.busy ? '保存中…' : '保存并连接' }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" v-if="toast" :class="toast.cls">{{ toast.msg }}</div>
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
 <script src="/static/zh/hot.js?v=9"></script>
 <script src="/static/zh/fuzz.js?v=2"></script>
-<script src="/static/zh/app.js?v=18"></script>
+<script src="/static/zh/app.js?v=19"></script>
 </body>
 </html>

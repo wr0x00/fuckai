@@ -168,7 +168,16 @@ createApp({
                 sentText: '',
                 max_tokens: 0,
                 attachments: [],
+                mcpEnabled: false,
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
+            },
+            mcp: {
+                show: false,
+                sdk: true,
+                servers: [],
+                tools: [],
+                editing: null,
+                busy: false,
             },
             atk: {
                 objective_group: '',
@@ -689,6 +698,7 @@ createApp({
                 sentText: '',
                 max_tokens: 0,
                 attachments: [],
+                mcpEnabled: this.chat.mcpEnabled || false,
                 ctx: { enabled: true, rounds: 6, mode: 'compress', chars: 300 },
             };
             this.chatSessionsRefresh();
@@ -846,7 +856,7 @@ createApp({
             this.chat.messages.push(um);
             this.chat.input = '';
             this.chat.attachments = [];
-            const am = { role: 'assistant', content: '' };
+            const am = { role: 'assistant', content: '', tools: [] };
             this.chat.messages.push(am);
             this.chat.busy = true;
             this.chat.streaming = true;
@@ -869,6 +879,7 @@ createApp({
                         context_rounds: ctx.enabled ? ctx.rounds : 0,
                         history_mode: ctx.enabled ? ctx.mode : 'drop',
                         history_chars: ctx.enabled ? ctx.chars : 300,
+                        use_mcp: !!this.chat.mcpEnabled,
                     }),
                 });
                 if (!resp.ok || !resp.body) {
@@ -895,6 +906,27 @@ createApp({
                         } else if (ev.type === 'reasoning') {
                             am.thinking = (am.thinking || '') + ev.text;
                             this.chatScroll();
+                        } else if (ev.type === 'tool_start') {
+                            const rec = { id: ev.id, name: ev.name, args: ev.args, result: '', state: 'running' };
+                            am.tools = am.tools || [];
+                            am.tools.push(rec);
+                            this.chatScroll();
+                        } else if (ev.type === 'tool_end') {
+                            const list = am.tools || [];
+                            let rec = list.find(t => t.id === ev.id);
+                            if (!rec) {
+                                rec = { id: ev.id, name: ev.name, args: ev.args, result: '' };
+                                list.push(rec);
+                            }
+                            rec.result = ev.result || '';
+                            rec.server = ev.server || '';
+                            rec.state = 'done';
+                            am.tools = list;
+                            this.chatScroll();
+                        } else if (ev.type === 'mcp_warn') {
+                            this.notify('MCP: ' + ev.error, 'err');
+                        } else if (ev.type === 'mcp_tools') {
+                            this.notify('已加载 ' + (ev.count || 0) + ' 个 MCP 工具');
                         } else if (ev.type === 'done') {
                             am.content = ev.reply || am.content;
                             if (ev.sent) this.chat.sentText = JSON.stringify(ev.sent, null, 2);
@@ -1006,6 +1038,160 @@ createApp({
             if (sid) {
                 this.api('/api/chat/sessions/' + sid, { method: 'DELETE' })
                     .then(() => this.chatSessionsRefresh()).catch(() => {});
+            }
+        },
+
+        /* ---------------- MCP ---------------- */
+
+        mcpOpen() {
+            this.mcp.show = true;
+            this.mcpLoad();
+        },
+
+        async mcpLoad() {
+            try {
+                const r = await this.api('/api/mcp/servers');
+                this.mcp.sdk = r.sdk !== false;
+                this.mcp.servers = r.items || [];
+                if (!this.mcp.editing) this.mcpNew();
+                await this.mcpToolsLoad();
+            } catch (e) {
+                this.notify('加载 MCP 配置失败: ' + e.message, 'err');
+            }
+        },
+
+        async mcpToolsLoad() {
+            try {
+                const r = await this.api('/api/mcp/tools');
+                this.mcp.tools = r.items || [];
+            } catch (e) { /* 静默 */ }
+        },
+
+        mcpNew() {
+            this.mcp.editing = {
+                name: '',
+                transport: 'stdio',
+                command: '',
+                args: '',
+                env: '',
+                url: '',
+                headers: '',
+                enabled: true,
+                timeout: 60,
+            };
+        },
+
+        mcpEdit(s) {
+            this.mcp.editing = {
+                name: s.name || '',
+                transport: s.transport || 'stdio',
+                command: s.command || '',
+                args: (s.args || []).join('\n'),
+                env: Object.entries(s.env || {}).map(([k, v]) => k + '=' + v).join('\n'),
+                url: s.url || '',
+                headers: Object.entries(s.headers || {}).map(([k, v]) => k + '=' + v).join('\n'),
+                enabled: s.enabled !== false,
+                timeout: s.timeout || 60,
+            };
+        },
+
+        mcpParseKV(text) {
+            const out = {};
+            (text || '').split('\n').forEach(line => {
+                const t = line.trim();
+                if (!t) return;
+                const i = t.indexOf('=');
+                if (i <= 0) return;
+                out[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+            });
+            return out;
+        },
+
+        async mcpSave() {
+            const e = this.mcp.editing;
+            if (!e || !e.name.trim()) { this.notify('请填写服务器名称', 'err'); return; }
+            const body = {
+                name: e.name.trim(),
+                transport: e.transport,
+                command: e.command || '',
+                args: (e.args || '').split('\n').map(x => x.trim()).filter(Boolean),
+                env: this.mcpParseKV(e.env),
+                url: e.url || '',
+                headers: this.mcpParseKV(e.headers),
+                enabled: !!e.enabled,
+                timeout: Number(e.timeout) || 60,
+            };
+            this.mcp.busy = true;
+            try {
+                const exists = this.mcp.servers.some(s => s.name === body.name);
+                const r = await this.api('/api/mcp/servers', {
+                    method: exists ? 'PUT' : 'POST',
+                    body: JSON.stringify(body),
+                });
+                this.mcp.servers = r.items || this.mcp.servers;
+                await this.mcpToolsLoad();
+                this.notify(exists ? 'MCP 服务器已更新' : 'MCP 服务器已添加', 'ok');
+            } catch (e2) {
+                this.notify('保存失败: ' + e2.message, 'err');
+            } finally {
+                this.mcp.busy = false;
+            }
+        },
+
+        async mcpDelete(s) {
+            if (!confirm('删除 MCP 服务器「' + s.name + '」？')) return;
+            try {
+                const r = await this.api('/api/mcp/servers/' + encodeURIComponent(s.name), { method: 'DELETE' });
+                this.mcp.servers = r.items || [];
+                if (this.mcp.editing && this.mcp.editing.name === s.name) this.mcpNew();
+                await this.mcpToolsLoad();
+                this.notify('已删除', 'ok');
+            } catch (e) {
+                this.notify('删除失败: ' + e.message, 'err');
+            }
+        },
+
+        async mcpConnect(s) {
+            try {
+                const r = await this.api('/api/mcp/connect', {
+                    method: 'POST',
+                    body: JSON.stringify({ names: [s.name] }),
+                });
+                this.mcp.servers = r.items || this.mcp.servers;
+                await this.mcpToolsLoad();
+                const item = this.mcp.servers.find(x => x.name === s.name);
+                if (item && item.state === 'error') this.notify('连接失败: ' + item.error, 'err');
+                else this.notify('已连接', 'ok');
+            } catch (e) {
+                this.notify('连接失败: ' + e.message, 'err');
+            }
+        },
+
+        async mcpDisconnect(s) {
+            try {
+                const r = await this.api('/api/mcp/disconnect', {
+                    method: 'POST',
+                    body: JSON.stringify({ names: [s.name] }),
+                });
+                this.mcp.servers = r.items || this.mcp.servers;
+                await this.mcpToolsLoad();
+            } catch (e) {
+                this.notify('断开失败: ' + e.message, 'err');
+            }
+        },
+
+        async mcpConnectAll() {
+            try {
+                const r = await this.api('/api/mcp/connect', {
+                    method: 'POST',
+                    body: JSON.stringify({ names: null }),
+                });
+                this.mcp.servers = r.items || this.mcp.servers;
+                await this.mcpToolsLoad();
+                const bad = this.mcp.servers.filter(s => s.state === 'error');
+                this.notify(bad.length ? (bad.length + ' 个服务器连接失败') : '全部连接完成', bad.length ? 'err' : 'ok');
+            } catch (e) {
+                this.notify('连接失败: ' + e.message, 'err');
             }
         },
 

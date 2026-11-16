@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM Injection Attack Testing Workbench</title>
-<link rel="stylesheet" href="/static/styles.css?v=24">
+<link rel="stylesheet" href="/static/styles.css?v=26">
 <script>
 /* Language guard: redirect to the Chinese variant if that's the stored choice */
 (function () {
@@ -1087,6 +1087,16 @@
                 </span>
               </div>
               <div class="msg-think" v-if="m.thinking">Thinking: {{ m.thinking }}</div>
+              <div class="msg-tools" v-if="m.tools && m.tools.length">
+                <div class="msg-tool" v-for="(t,j) in m.tools" :key="j">
+                  <div class="msg-tool-h">
+                    <span class="msg-tool-name mono">⚡ {{ t.name }}</span>
+                    <span class="msg-tool-state" :class="t.state">{{ t.state === 'running' ? 'calling…' : 'done' }}</span>
+                  </div>
+                  <div class="msg-tool-args mono" v-if="t.args && Object.keys(t.args).length">{{ JSON.stringify(t.args) }}</div>
+                  <div class="msg-tool-res" v-if="t.result">{{ t.result }}</div>
+                </div>
+              </div>
               <div class="msg-body">{{ m.content }}</div>
             </div>
           </div>
@@ -1100,9 +1110,15 @@
               </div>
             </div>
             <div class="chat-send-row">
-              <button class="icon-btn" @click="$refs.chatFileInput.click()" title="Attach images / files / video (multimodal)">
-                <svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66L9.4 17.4a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              <div class="chat-send-side">
+                <button class="icon-btn icon-btn-mcp" :class="{ on: chat.mcpEnabled }"
+                        @click="mcpOpen" title="MCP servers (the model can call their tools directly)">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10.5H13V2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="icon-btn" @click="$refs.chatFileInput.click()" title="Attach images / files / video (multimodal)">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66L9.4 17.4a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
               <input type="file" ref="chatFileInput" multiple hidden
                      accept="image/*,video/*,audio/*,.pdf,.txt,.md,.json,.csv,.py,.js,.html,.yaml,.yml,.log"
                      @change="chatPickFiles">
@@ -1111,6 +1127,7 @@
             </div>
             <div class="chat-send-ops">
               <span class="muted">Ctrl+Enter to send · context {{ chat.ctx.enabled ? ('keep ' + chat.ctx.rounds + ' rounds / ' + chat.ctx.mode) : 'off' }}</span>
+              <label class="check chat-mcp-check"><input type="checkbox" v-model="chat.mcpEnabled"> Allow MCP tool calls</label>
               <div class="spacer"></div>
               <button class="btn btn-ghost" @click="chatClear" :disabled="!chat.messages.length">Clear</button>
               <button class="btn btn-primary" @click="chatSend" :disabled="chat.busy || (!chat.input.trim() && !chat.attachments.length)">
@@ -1198,12 +1215,93 @@
     </div>
   </div>
 
+  <!-- ============ MCP servers modal ============ -->
+  <div class="modal-mask modal-mask-top" v-if="mcp.show" @click.self="mcp.show=false">
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <span class="modal-title">MCP Servers</span>
+        <span class="chip chip-static mono" v-if="!mcp.sdk">MCP SDK not installed</span>
+        <span class="chip chip-static mono" v-else>{{ mcp.tools.length }} tools available</span>
+        <div class="spacer"></div>
+        <button class="icon-btn" @click="mcp.show=false" title="Close">
+          <svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="modal-body mcp-body">
+        <div class="mcp-list">
+          <div class="mcp-list-head">
+            <span class="mcp-list-t">Configured servers</span>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm" @click="mcpConnectAll">Connect all</button>
+            <button class="btn btn-primary btn-sm" @click="mcpNew">＋ Add</button>
+          </div>
+          <div class="mcp-item" v-for="s in mcp.servers" :key="s.name"
+               :class="{ on: mcp.editing && mcp.editing.name === s.name }">
+            <div class="mcp-item-main">
+              <span class="mcp-item-name">{{ s.name }}</span>
+              <span class="badge badge-idle">{{ s.transport }}</span>
+              <span class="badge" :class="s.state === 'connected' ? 'badge-ok' : (s.state === 'error' ? 'badge-err' : 'badge-idle')">
+                {{ s.state === 'connected' ? 'connected' : (s.state === 'error' ? 'failed' : 'disconnected') }}
+              </span>
+              <span class="muted" v-if="s.tools">{{ s.tools }} tools</span>
+            </div>
+            <div class="mcp-item-err" v-if="s.error">{{ s.error }}</div>
+            <div class="mcp-item-ops">
+              <button class="btn btn-ghost btn-sm" @click="mcpEdit(s)">Edit</button>
+              <button class="btn btn-ghost btn-sm" @click="mcpConnect(s)" v-if="s.state !== 'connected'">Connect</button>
+              <button class="btn btn-ghost btn-sm" @click="mcpDisconnect(s)" v-else>Disconnect</button>
+              <button class="btn btn-ghost btn-sm btn-danger" @click="mcpDelete(s)">Delete</button>
+            </div>
+          </div>
+          <div class="empty" v-if="!mcp.servers.length">No MCP servers yet. Click “＋ Add” to create one.</div>
+        </div>
+
+        <div class="mcp-form" v-if="mcp.editing">
+          <div class="mcp-list-t">Server config</div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Name</span>
+              <input class="input" v-model="mcp.editing.name" placeholder="e.g. filesystem"></label>
+            <label class="field"><span class="field-label">Transport</span>
+              <select class="input" v-model="mcp.editing.transport">
+                <option value="stdio">stdio (local process)</option>
+                <option value="sse">sse (HTTP + SSE)</option>
+                <option value="http">http (Streamable HTTP)</option>
+              </select></label>
+          </div>
+          <template v-if="mcp.editing.transport === 'stdio'">
+            <label class="field"><span class="field-label">Command</span>
+              <input class="input mono" v-model="mcp.editing.command" placeholder="e.g. npx"></label>
+            <label class="field"><span class="field-label">Arguments (one per line)</span>
+              <textarea class="input mono" rows="3" v-model="mcp.editing.args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\workspace"></textarea></label>
+            <label class="field"><span class="field-label">Env vars (KEY=VALUE per line)</span>
+              <textarea class="input mono" rows="2" v-model="mcp.editing.env" placeholder="API_KEY=xxx"></textarea></label>
+          </template>
+          <template v-else>
+            <label class="field"><span class="field-label">Server URL</span>
+              <input class="input mono" v-model="mcp.editing.url" placeholder="http://127.0.0.1:3000/mcp"></label>
+            <label class="field"><span class="field-label">Headers (KEY=VALUE per line)</span>
+              <textarea class="input mono" rows="2" v-model="mcp.editing.headers" placeholder="Authorization=Bearer xxx"></textarea></label>
+          </template>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Timeout (seconds)</span>
+              <input class="input" type="number" min="5" max="600" v-model.number="mcp.editing.timeout"></label>
+            <label class="field mcp-field-check"><span class="field-label">Enabled</span>
+              <label class="check"><input type="checkbox" v-model="mcp.editing.enabled"> Connect this server</label></label>
+          </div>
+          <div class="mcp-form-foot">
+            <button class="btn btn-primary" @click="mcpSave" :disabled="mcp.busy">{{ mcp.busy ? 'Saving…' : 'Save & connect' }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" v-if="toast" :class="toast.cls">{{ toast.msg }}</div>
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
 <script src="/static/hot.js?v=9"></script>
 <script src="/static/fuzz.js?v=2"></script>
-<script src="/static/app.js?v=18"></script>
+<script src="/static/app.js?v=19"></script>
 </body>
 </html>

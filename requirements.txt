@@ -13,3 +13,6 @@ pyyaml>=6.0
 
 # 内嵌浏览器引擎（AI Safety HOT）：驱动真实 Chromium（Blink）渲染与 CDP 串流
 playwright>=1.40
+
+# MCP（Model Context Protocol）：接入外部 MCP 服务器，让模型在直连对话中调用工具
+mcp>=1.30

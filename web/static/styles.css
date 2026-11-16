@@ -1474,12 +1474,18 @@ html[data-theme="dark"] .tag-ex {
     color: var(--bg-layer);
     font-size: 13px;
     box-shadow: var(--shadow-3);
-    z-index: 50;
+    /* 高于所有弹窗，弹窗内的提示也要能看到 */
+    z-index: 90;
     animation: rise .2s ease;
 }
 
 .toast.err {
     background: var(--danger);
+    color: #fff;
+}
+
+.toast.ok {
+    background: var(--success);
     color: #fff;
 }
 
@@ -2720,6 +2726,180 @@ html[data-theme="dark"] .hot-stream {
     cursor: not-allowed;
 }
 
+
+/* ---------------- MCP（Model Context Protocol） ---------------- */
+
+.modal-mask-top {
+    z-index: 80;
+}
+
+.chat-mcp-check {
+    font-size: 11.5px;
+    color: var(--text-2);
+}
+
+.mcp-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.mcp-list {
+    border-right: 1px solid var(--stroke);
+    padding: 16px 18px;
+    overflow-y: auto;
+    max-height: 74vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mcp-list-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+}
+
+.mcp-list-t {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .4px;
+    color: var(--text-2);
+}
+
+.mcp-item {
+    border: 1px solid var(--stroke);
+    border-radius: var(--r-sm);
+    padding: 9px 11px;
+    background: var(--bg-alt);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mcp-item.on {
+    border-color: var(--brand);
+    background: var(--grad-soft);
+}
+
+.mcp-item-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+}
+
+.mcp-item-name {
+    font-weight: 650;
+    color: var(--text);
+}
+
+.mcp-item-err {
+    font-size: 11.5px;
+    color: var(--danger);
+    word-break: break-word;
+}
+
+.mcp-item-ops {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.mcp-form {
+    padding: 16px 18px;
+    overflow-y: auto;
+    max-height: 74vh;
+}
+
+.mcp-form .form-grid {
+    padding: 8px 0 0;
+}
+
+.mcp-field-check .check {
+    margin-top: 4px;
+}
+
+.mcp-form-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+
+/* 对话气泡里的工具调用记录 */
+
+.msg-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.msg-tool {
+    border: 1px solid var(--stroke);
+    border-left: 3px solid var(--brand);
+    border-radius: var(--r-sm);
+    background: var(--bg-sunken);
+    padding: 7px 10px;
+    font-size: 11.5px;
+}
+
+.msg-tool-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.msg-tool-name {
+    font-weight: 650;
+    color: var(--brand);
+    word-break: break-all;
+}
+
+.msg-tool-state {
+    margin-left: auto;
+    font-size: 10.5px;
+    color: var(--text-3);
+}
+
+.msg-tool-state.running {
+    color: var(--warn, #b7791f);
+}
+
+.msg-tool-args {
+    margin-top: 4px;
+    color: var(--text-2);
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+.msg-tool-res {
+    margin-top: 4px;
+    color: var(--text-2);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 180px;
+    overflow: auto;
+}
+
+@media (max-width: 900px) {
+    .mcp-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .mcp-list {
+        border-right: 0;
+        border-bottom: 1px solid var(--stroke);
+        max-height: 40vh;
+    }
+}
+
 .field-inline {
     display: inline-flex;
     align-items: center;
@@ -2809,9 +2989,26 @@ html[data-theme="dark"] .hot-stream {
     align-items: flex-end;
 }
 
-.chat-send-row .icon-btn {
+.chat-send-side {
     flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     margin-bottom: 4px;
+}
+
+.chat-send-side .icon-btn {
+    margin-bottom: 0;
+}
+
+.icon-btn-mcp.on {
+    background: var(--grad-soft);
+    color: var(--brand);
+}
+
+.icon-btn-mcp.on:hover {
+    background: var(--grad-soft);
+    color: var(--brand-hi);
 }
 
 .chat-send-row textarea {
