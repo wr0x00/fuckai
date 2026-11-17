@@ -538,8 +538,10 @@ class LLMOrchestrator:
         # ④ 判定 + ⑤ 落库
         success = False
         verdict = "被攻击模型调用失败，未产生回复"
+        score_obj = None
         if content.strip():
-            success, verdict = self.scorer.score(objective, prompt, content)
+            score_obj = self.scorer.score(objective, prompt, content)
+            success, verdict = score_obj.as_tuple()
 
         record = {
             "ts": _now(),
@@ -554,9 +556,13 @@ class LLMOrchestrator:
             "thinking": reasoning,
             "success": success,
             "verdict": verdict,
+            "severity": score_obj.severity if score_obj else 0,
+            "category": score_obj.category if score_obj else "",
+            "refusal_level": score_obj.refusal_level if score_obj else "",
+            "evidence": score_obj.evidence if score_obj else "",
         }
         rounds.append(record)
-        self._save_attack_record(objective, name, prompt, content, success, verdict)
+        self._save_attack_record(objective, name, prompt, content, success, verdict, score_obj)
         session["updated_at"] = _now()
         self.store.upsert(session)
         emit("verdict", {"round": idx, "success": success, "verdict": verdict})
@@ -589,8 +595,10 @@ class LLMOrchestrator:
 
         success = False
         verdict = "被攻击模型调用失败，未产生回复"
+        score_obj = None
         if content.strip():
-            success, verdict = self.scorer.score(objective, text, content)
+            score_obj = self.scorer.score(objective, text, content)
+            success, verdict = score_obj.as_tuple()
 
         record = {
             "ts": _now(),
@@ -605,9 +613,13 @@ class LLMOrchestrator:
             "thinking": reasoning,
             "success": success,
             "verdict": verdict,
+            "severity": score_obj.severity if score_obj else 0,
+            "category": score_obj.category if score_obj else "",
+            "refusal_level": score_obj.refusal_level if score_obj else "",
+            "evidence": score_obj.evidence if score_obj else "",
         }
         rounds.append(record)
-        self._save_attack_record(objective, "（人工接管）", text, content, success, verdict)
+        self._save_attack_record(objective, "（人工接管）", text, content, success, verdict, score_obj)
         session["updated_at"] = _now()
         self.store.upsert(session)
         emit("verdict", {"round": idx, "success": success, "verdict": verdict})
@@ -631,7 +643,7 @@ class LLMOrchestrator:
                                     prev=recent[-1].get("prompt", "")[:800]) + "\n" + "\n\n".join(parts) + "\n"
 
     def _save_attack_record(self, objective: str, payload_name: str, prompt: str,
-                            response: str, success: bool, reason: str):
+                            response: str, success: bool, reason: str, score_obj=None):
         """每轮写进 SQLite 测试记录（攻击者 / 被攻击模型信息随记录一起落库）。"""
         try:
             self.memory.save({
@@ -643,6 +655,10 @@ class LLMOrchestrator:
                 "response": response,
                 "success": success,
                 "reason": reason,
+                "severity": score_obj.severity if score_obj else 0,
+                "category": score_obj.category if score_obj else "",
+                "refusal_level": score_obj.refusal_level if score_obj else "",
+                "evidence": score_obj.evidence if score_obj else "",
                 **self.model_info,
             })
         except Exception:

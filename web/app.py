@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from fuckai import analyzer
 from fuckai.client import ChatClient
 from fuckai.config import load_config
 from fuckai.converters import list_converters
@@ -901,6 +902,8 @@ def _payload_brief(p: Payload) -> dict:
         "is_template": p.is_template,
         "params": p.params,
         "harm": p.harm,
+        "harm_major": p.harm_major,
+        "dataset": p.dataset,
     }
 
 
@@ -1143,19 +1146,29 @@ def _find_payload(name: str) -> Payload | None:
     return None
 
 
-def _resolve_objectives(req: AttackRequest) -> list[str]:
+def _resolve_objectives(req: AttackRequest) -> list[dict]:
+    """解析本次攻击要跑的测试话题。
+
+    返回 [{"value": 文本, "dataset": 数据集名, "harm": 危害标签, "harm_major": 大类标签}]，
+    dataset/harm/harm_major 会随记录一起落库，供矩阵聚合（数据集 × 类别）使用。
+    """
     if req.objectives:
-        return [o.strip() for o in req.objectives if o.strip()]
+        return [{"value": o.strip(), "dataset": "", "harm": "", "harm_major": ""}
+                for o in req.objectives if o.strip()]
     if not req.objective_group:
         return []
     groups = _library().local_groups()
     items = groups.get(req.objective_group, [])
     if req.use_all:
-        return [p.value for p in items]
-    n = max(1, min(req.sample_size, len(items)))
-    import random
+        picked = items
+    else:
+        n = max(1, min(req.sample_size, len(items)))
+        import random
 
-    return [p.value for p in random.sample(items, n)]
+        picked = random.sample(items, n)
+    return [{"value": p.value, "dataset": p.dataset or p.name,
+             "harm": p.harm, "harm_major": p.harm_major}
+            for p in picked]
 
 
 @app.post("/api/attack/run")
@@ -1316,6 +1329,46 @@ def download_report(name: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="报告不存在")
     media = "text/csv" if name.endswith(".csv") else "application/json"
     return FileResponse(path, media_type=media, filename=name)
+
+
+# --------------------------------------------------------------------------- #
+# 多维评分：矩阵聚合 / 雷达图 / 总览
+# 计算逻辑全在 fuckai/analyzer.py，这里只做参数校验和转发
+# --------------------------------------------------------------------------- #
+@app.get("/api/analytics/matrix")
+def analytics_matrix(row: str = "category", col: str = "converter") -> dict:
+    """数据集 × 类别 等任意两维交叉聚合，供前端画热力图。"""
+    try:
+        analyzer.check_dimension(row)
+        analyzer.check_dimension(col)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return analyzer.matrix(_orchestrator().memory, row_key=row, col_key=col)
+
+
+@app.get("/api/analytics/radar")
+def analytics_radar(dimension: str = "category") -> dict:
+    """雷达图数据：按维度统计 ASR（1 - pass_rate），与 AIG 同口径。"""
+    try:
+        analyzer.check_dimension(dimension)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return analyzer.radar(_orchestrator().memory, dimension=dimension)
+
+
+@app.get("/api/analytics/overview")
+def analytics_overview() -> dict:
+    """总览：总体 ASR + 各维度分布，前端一屏看全。"""
+    return analyzer.overview(_orchestrator().memory)
+
+
+@app.delete("/api/records/{rid}")
+def delete_record(rid: int) -> dict:
+    orch = _orchestrator()
+    n = orch.memory.delete(rid)
+    if n <= 0:
+        raise HTTPException(status_code=404, detail=f"记录不存在: {rid}")
+    return {"ok": True, "deleted": n, "message": "记录已删除"}
 
 
 @app.delete("/api/records")

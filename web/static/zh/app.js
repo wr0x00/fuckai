@@ -18,6 +18,7 @@ const ICO = {
     save: '<svg viewBox="0 0 24 24" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M17 21v-8H7v8M7 3v5h8" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
     workbench: '<svg viewBox="0 0 24 24" fill="none"><path d="M9.5 2.8v5.6L4.7 16.6A2.5 2.5 0 0 0 6.9 20.5h10.2a2.5 2.5 0 0 0 2.2-3.9l-4.8-8.2V2.8" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.4 2.8h7.2M8 14.2h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
     hot: '<svg viewBox="0 0 24 24" fill="none"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+    analytics: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 4.5v15h15.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="7" y="11.5" width="2.6" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="11.4" y="7.5" width="2.6" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="15.8" y="13.5" width="2.6" height="3.5" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>',
 };
 
 const emptyArsenal = {
@@ -39,12 +40,31 @@ const RecordItem = {
     props: {
         rec: { type: Object, required: true },
         collapsed: { type: Boolean, default: false },
+        deletable: { type: Boolean, default: false },
     },
     data() {
         return { expanded: !this.collapsed };
     },
+    computed: {
+        sevText() { return window.ANL.sev(this.rec.severity); },
+        catText() { return window.ANL.cat(this.rec.category); },
+        refText() { return window.ANL.ref(this.rec.refusal_level); },
+        refClass() {
+            const map = {
+                full_refusal: 'rf-lv1',
+                partial_refusal: 'rf-lv2',
+                partial_compliance: 'rf-lv3',
+                full_compliance: 'rf-lv4',
+            };
+            return map[this.rec.refusal_level] || '';
+        },
+    },
     methods: {
         copy(text) { this.$root.copyText(text); },
+        remove() {
+            if (!confirm('确定删除这条记录？删除后不可恢复。')) return;
+            this.$root.deleteRecord(this.rec.id);
+        },
     },
     template: `
         <div class="rec-item">
@@ -54,9 +74,17 @@ const RecordItem = {
                 <span class="tag mono">{{ rec.converter }}</span>
                 <span class="tag mono muted">{{ rec.payload || '未套模板' }}</span>
                 <span class="rec-ts mono muted">{{ rec.ts }}</span>
+                <button class="rec-del" v-if="deletable" @click="remove" title="删除这条记录">删除</button>
                 <button class="rec-toggle" @click="expanded = !expanded" :title="expanded ? '收起明细' : '展开明细'">
                     {{ expanded ? '收起' : '明细' }}
                 </button>
+            </div>
+            <div class="rec-badges" v-if="rec.severity || rec.category || rec.refusal_level || rec.dataset || rec.harm">
+                <span class="rbadge rbadge-sev" :class="'sev-' + (rec.severity || 0)" v-if="rec.severity">{{ sevText }}</span>
+                <span class="rbadge rbadge-cat" v-if="rec.category" :title="rec.category">{{ catText }}</span>
+                <span class="rbadge rbadge-ref" :class="refClass" v-if="rec.refusal_level">{{ refText }}</span>
+                <span class="rbadge rbadge-ds" v-if="rec.dataset" :title="rec.dataset">{{ rec.dataset }}</span>
+                <span class="rbadge rbadge-harm" v-if="rec.harm" :title="rec.harm">{{ rec.harm }}</span>
             </div>
             <div class="rec-body" v-show="expanded">
                 <div class="kv">
@@ -92,13 +120,17 @@ const RecordItem = {
                     <div class="kv-head"><b>判定理由</b></div>
                     <p>{{ rec.reason || '（无）' }}</p>
                 </div>
+                <div class="kv" v-if="rec.evidence">
+                    <div class="kv-head"><b>越界证据</b></div>
+                    <p>{{ rec.evidence }}</p>
+                </div>
             </div>
         </div>
     `,
 };
 
 createApp({
-    components: { RecordItem, FuzzPanel: window.FuzzPanel, HotPanel: window.HotPanel },
+    components: { RecordItem, FuzzPanel: window.FuzzPanel, HotPanel: window.HotPanel, AnalyticsPanel: window.AnalyticsPanel },
     data() {
         return {
             page: 'dash',
@@ -189,6 +221,9 @@ createApp({
                 timeout: 120,
                 converter_ids: ['direct'],
                 payload_name: '',
+                payload_query: '',
+                payload_open: false,
+                payload_style: {},
                 samples: [],
             },
             running: false,
@@ -280,6 +315,7 @@ createApp({
                 { key: 'workbench', label: '人工工作台', icon: ICO.workbench, sub: '手工构造注入样本 / PDF 多模态' },
                 { key: 'attack', label: '攻击测试', icon: ICO.attack, sub: '执行并实时观测结果' },
                 { key: 'records', label: '测试记录', icon: ICO.records, sub: '历史结果与报告导出', badge: () => this.records.total },
+                { key: 'analytics', label: '多维分析', icon: ICO.analytics, sub: '多维评分：雷达图 / 矩阵热力图 / 危害等级' },
                 { key: 'models', label: '模型管理', icon: ICO.robot, sub: '多模型配置与直连测试' },
                 { key: 'settings', label: '设置', icon: ICO.settings, sub: '语言 / 外观' },
                 { key: 'update', label: '从 GitHub 更新', icon: ICO.update, sub: '拉取最新源码' },
@@ -309,6 +345,15 @@ createApp({
             const all = [...this.arsenal.jailbreaks, ...this.arsenal.executors];
             if (!q) return all;
             return all.filter(p => p.name.toLowerCase().includes(q) || p.value.toLowerCase().includes(q));
+        },
+        payloadMatches() {
+            const q = this.atk.payload_query.trim().toLowerCase();
+            const all = [...this.arsenal.jailbreaks, ...this.arsenal.executors];
+            if (!q) return all;
+            return all.filter(p =>
+                p.name.toLowerCase().includes(q) ||
+                (p.value || '').toLowerCase().includes(q)
+            );
         },
         filteredRecords() {
             const q = this.recQuery.trim().toLowerCase();
@@ -408,6 +453,19 @@ createApp({
         this.applyTheme();
         this.loadAll();
         this.loadWorkbench();
+    },
+
+    mounted() {
+        this._onWinChange = () => this.onWinChange();
+        window.addEventListener('scroll', this._onWinChange, true);
+        window.addEventListener('resize', this._onWinChange);
+    },
+
+    beforeUnmount() {
+        if (this._onWinChange) {
+            window.removeEventListener('scroll', this._onWinChange, true);
+            window.removeEventListener('resize', this._onWinChange);
+        }
     },
 
     methods: {
@@ -1204,6 +1262,66 @@ createApp({
             }
         },
 
+        pickPayload(name) {
+            this.atk.payload_name = name;
+            this.atk.payload_query = '';
+            this.atk.payload_open = false;
+        },
+
+        openPayloadList() {
+            this.atk.payload_open = true;
+            this.$nextTick(() => this.positionPayloadList());
+        },
+
+        // 下拉是 fixed 定位，按输入框位置动态摆位：
+        // 上面空间够就向上伸展（不被视口底部截断），否则向下展开
+        positionPayloadList() {
+            const input = this.$refs.payloadInput;
+            if (!input) return;
+            const r = input.getBoundingClientRect();
+            this._payloadRect = { top: r.top, left: r.left, width: r.width };
+            const vh = window.innerHeight || document.documentElement.clientHeight;
+            const vw = window.innerWidth || document.documentElement.clientWidth;
+            const gap = 6;
+            const pad = 8;
+            const maxH = 620;
+            const minH = 160;
+            const spaceAbove = r.top - gap - pad;
+            const spaceBelow = vh - r.bottom - gap - pad;
+            let top, height;
+            if (spaceAbove >= minH) {
+                height = Math.min(maxH, spaceAbove);
+                top = Math.max(pad, r.top - gap - height);
+            } else {
+                height = Math.min(maxH, Math.max(minH, spaceBelow));
+                top = Math.min(r.bottom + gap, Math.max(pad, vh - height - pad));
+            }
+            const width = Math.min(r.width, vw - pad * 2);
+            const left = Math.max(pad, Math.min(r.left, vw - width - pad));
+            this.atk.payload_style = {
+                top: Math.round(top) + 'px',
+                left: Math.round(left) + 'px',
+                width: Math.round(width) + 'px',
+                maxHeight: Math.round(height) + 'px',
+            };
+        },
+
+        onWinChange() {
+            if (!this.atk.payload_open) return;
+            const input = this.$refs.payloadInput;
+            if (!input) return;
+            const r = input.getBoundingClientRect();
+            const last = this._payloadRect || {};
+            if (Math.abs(r.top - (last.top || 0)) < 0.5 &&
+                Math.abs(r.left - (last.left || 0)) < 0.5) return;
+            this.positionPayloadList();
+        },
+
+        closePayloadList() {
+            // 延迟关闭，保证下拉项的 click 先于 blur 执行
+            setTimeout(() => { this.atk.payload_open = false; }, 150);
+        },
+
         resetRun() {
             // 真取消：先通知后端停止派发剩余任务，再断开前端 SSE
             if (this.runId) {
@@ -1333,6 +1451,16 @@ createApp({
                 this.notify('记录已清空');
             } catch (e) {
                 this.notify('清空失败: ' + e.message, 'err');
+            }
+        },
+
+        async deleteRecord(id) {
+            try {
+                await this.api('/api/records/' + id, { method: 'DELETE' });
+                await this.loadRecords();
+                this.notify('记录已删除');
+            } catch (e) {
+                this.notify('删除失败: ' + e.message, 'err');
             }
         },
 

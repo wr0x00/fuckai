@@ -1,10 +1,10 @@
-﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM 注入攻击测试台</title>
-<link rel="stylesheet" href="/static/styles.css?v=26">
+<link rel="stylesheet" href="/static/styles.css?v=32">
 <script>
 /* 语言守卫：localStorage 选择的不是中文时跳回英文版 */
 (function () {
@@ -756,18 +756,32 @@
               </div>
             </div>
 
-            <label class="field">
+            <div class="field tpk">
               <span class="field-label">提示词模板</span>
-              <select class="input" v-model="atk.payload_name">
-                <option value="">不包装（话题直接发送）</option>
-                <optgroup label="越狱模板">
-                  <option v-for="p in arsenal.jailbreaks" :key="p.name" :value="p.name">{{ p.name }}</option>
-                </optgroup>
-                <optgroup label="执行器话术">
-                  <option v-for="p in arsenal.executors" :key="p.name" :value="p.name">{{ p.name }}</option>
-                </optgroup>
-              </select>
-            </label>
+              <div class="tpk-box">
+                <input class="input" type="text" v-model="atk.payload_query" autocomplete="off" ref="payloadInput"
+                       placeholder="输入关键字检索模板…" @focus="openPayloadList()"
+                       @input="openPayloadList()" @blur="closePayloadList" @keydown.escape="atk.payload_open = false">
+                <button class="tpk-clear" v-if="atk.payload_query" @click="atk.payload_query = ''; openPayloadList()"
+                        title="清除">×</button>
+              </div>
+              <div class="tpk-list" v-if="atk.payload_open" ref="payloadList" :style="atk.payload_style">
+                <button class="tpk-item tpk-none" @mousedown.prevent @click="pickPayload('')">
+                  <span class="tpk-name">不包装（话题直接发送）</span>
+                </button>
+                <button class="tpk-item" v-for="p in payloadMatches" :key="p.kind + '|' + p.name"
+                        @mousedown.prevent @click="pickPayload(p.name)">
+                  <span class="tpk-name" :title="p.name">{{ p.name }}</span>
+                  <span class="tpk-kind" :class="p.kind === 'executor' ? 'tag-ex' : 'tag-jb'">{{ p.kind === 'executor' ? 'EX' : 'JB' }}</span>
+                </button>
+                <div class="tpk-empty" v-if="!payloadMatches.length">没有匹配的模板</div>
+              </div>
+              <div class="tpk-sel">
+                <span class="muted">当前：</span>
+                <span class="tag mono" v-if="atk.payload_name">{{ atk.payload_name }}</span>
+                <span class="muted" v-else>不包装（话题直接发送）</span>
+              </div>
+            </div>
 
             <div class="atk-actions">
               <button class="btn btn-primary" @click="runAttack" :disabled="running">
@@ -833,10 +847,15 @@
 
         <div class="card">
           <div class="rec-list" v-if="filteredRecords.length">
-            <record-item v-for="r in filteredRecords" :key="r.id" :rec="r" collapsed />
+            <record-item v-for="r in filteredRecords" :key="r.id" :rec="r" collapsed deletable />
           </div>
           <div class="empty" v-else>没有匹配的记录</div>
         </div>
+      </section>
+
+      <!-- ---------- 多维分析 ---------- -->
+      <section v-show="page==='analytics'" class="page">
+        <analytics-panel v-if="page==='analytics'"></analytics-panel>
       </section>
 
       <!-- ---------- 模型管理 ---------- -->
@@ -978,6 +997,70 @@
             </button>
           </div>
           <p class="muted">语言切换会跳转到对应界面版本；界面文案完全切换，数据集内容保持原样。</p>
+        </div>
+
+        <!-- ---------- 徽章说明 ---------- -->
+        <div class="card">
+          <div class="card-head"><h2 class="card-title">徽章说明</h2></div>
+          <p class="muted">测试记录上出现的每一个徽章，以及它的颜色代表什么。</p>
+
+          <div class="bl-legend">
+            <div class="bl-group">
+              <div class="bl-group-t">危害等级 —— 泄露内容到底有多危险</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-1">危害 1</span><span class="bl-note">无害，没有可用内容</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-2">危害 2</span><span class="bl-note">风险有限</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-3">危害 3</span><span class="bl-note">风险中等</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-4">危害 4</span><span class="bl-note">风险严重</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-5">危害 5</span><span class="bl-note">可直接利用，最高</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">拒答程度 —— 被攻击模型守得有多死</div>
+              <div class="bl-scale">
+                <span class="bl-scale-end">守得最死</span>
+                <span class="bl-scale-bar"></span>
+                <span class="bl-scale-end">完全服从</span>
+              </div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv1">完全拒绝</span><span class="bl-note">模型直接拒绝 —— 红色，最安全的结果</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv2">部分拒绝</span><span class="bl-note">拒绝了但漏了片段 —— 橙色</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv3">部分服从</span><span class="bl-note">含糊其辞地答了 —— 黄色</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv4">完全服从</span><span class="bl-note">完整回答了请求 —— 绿色，最糟的结果</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">记录上的其他徽章</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="rbadge rbadge-cat">网络攻击</span><span class="bl-note">风险类别（共 14 类）</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ds">cnsafe</span><span class="bl-note">这条提示词来自哪个数据集</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-harm">危害子类</span><span class="bl-note">数据集自带的细粒度危害标签</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">结果标记与模型角色</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="mark mark-true">T</span><span class="bl-note">越狱成功</span></span>
+                <span class="bl-item"><span class="mark mark-false">F</span><span class="bl-note">越狱失败</span></span>
+                <span class="bl-item"><span class="rec-model-tag tag-atk">攻击者</span><span class="bl-note">发起攻击的模型</span></span>
+                <span class="bl-item"><span class="rec-model-tag tag-tgt">被攻击</span><span class="bl-note">被测目标模型</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">连通状态与载荷类型</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="badge badge-ok">正常</span><span class="bl-note">接口可达</span></span>
+                <span class="bl-item"><span class="badge badge-err">失败</span><span class="bl-note">接口报错</span></span>
+                <span class="bl-item"><span class="badge badge-idle">未测</span><span class="bl-note">尚未测试</span></span>
+                <span class="bl-item"><span class="tag tag-jb">越狱</span><span class="bl-note">越狱提示词模板</span></span>
+                <span class="bl-item"><span class="tag tag-ex">执行器</span><span class="bl-note">执行器话术</span></span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1302,6 +1385,7 @@
 <script src="/static/vendor/vue.global.prod.js"></script>
 <script src="/static/zh/hot.js?v=9"></script>
 <script src="/static/zh/fuzz.js?v=2"></script>
-<script src="/static/zh/app.js?v=19"></script>
+<script src="/static/analytics.js?v=2"></script>
+<script src="/static/zh/app.js?v=24"></script>
 </body>
 </html>

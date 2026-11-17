@@ -1,10 +1,10 @@
-﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM Injection Attack Testing Workbench</title>
-<link rel="stylesheet" href="/static/styles.css?v=26">
+<link rel="stylesheet" href="/static/styles.css?v=32">
 <script>
 /* Language guard: redirect to the Chinese variant if that's the stored choice */
 (function () {
@@ -756,18 +756,32 @@
               </div>
             </div>
 
-            <label class="field">
+            <div class="field tpk">
               <span class="field-label">Prompt template</span>
-              <select class="input" v-model="atk.payload_name">
-                <option value="">No wrapping (send topic as-is)</option>
-                <optgroup label="Jailbreak templates">
-                  <option v-for="p in arsenal.jailbreaks" :key="p.name" :value="p.name">{{ p.name }}</option>
-                </optgroup>
-                <optgroup label="Executor scripts">
-                  <option v-for="p in arsenal.executors" :key="p.name" :value="p.name">{{ p.name }}</option>
-                </optgroup>
-              </select>
-            </label>
+              <div class="tpk-box">
+                <input class="input" type="text" v-model="atk.payload_query" autocomplete="off" ref="payloadInput"
+                       placeholder="Type to search templates…" @focus="openPayloadList()"
+                       @input="openPayloadList()" @blur="closePayloadList" @keydown.escape="atk.payload_open = false">
+                <button class="tpk-clear" v-if="atk.payload_query" @click="atk.payload_query = ''; openPayloadList()"
+                        title="Clear search">×</button>
+              </div>
+              <div class="tpk-list" v-if="atk.payload_open" ref="payloadList" :style="atk.payload_style">
+                <button class="tpk-item tpk-none" @mousedown.prevent @click="pickPayload('')">
+                  <span class="tpk-name">No wrapping (send topic as-is)</span>
+                </button>
+                <button class="tpk-item" v-for="p in payloadMatches" :key="p.kind + '|' + p.name"
+                        @mousedown.prevent @click="pickPayload(p.name)">
+                  <span class="tpk-name" :title="p.name">{{ p.name }}</span>
+                  <span class="tpk-kind" :class="p.kind === 'executor' ? 'tag-ex' : 'tag-jb'">{{ p.kind === 'executor' ? 'EX' : 'JB' }}</span>
+                </button>
+                <div class="tpk-empty" v-if="!payloadMatches.length">No matching templates</div>
+              </div>
+              <div class="tpk-sel">
+                <span class="muted">Current:</span>
+                <span class="tag mono" v-if="atk.payload_name">{{ atk.payload_name }}</span>
+                <span class="muted" v-else>No wrapping (send topic as-is)</span>
+              </div>
+            </div>
 
             <div class="atk-actions">
               <button class="btn btn-primary" @click="runAttack" :disabled="running">
@@ -833,10 +847,15 @@
 
         <div class="card">
           <div class="rec-list" v-if="filteredRecords.length">
-            <record-item v-for="r in filteredRecords" :key="r.id" :rec="r" collapsed />
+            <record-item v-for="r in filteredRecords" :key="r.id" :rec="r" collapsed deletable />
           </div>
           <div class="empty" v-else>No matching records</div>
         </div>
+      </section>
+
+      <!-- ---------- Analytics ---------- -->
+      <section v-show="page==='analytics'" class="page">
+        <analytics-panel v-if="page==='analytics'"></analytics-panel>
       </section>
 
       <!-- ---------- Models ---------- -->
@@ -951,6 +970,70 @@
             </button>
           </div>
           <p class="muted">Switching language jumps to the matching UI variant; dataset content stays as-is.</p>
+        </div>
+
+        <!-- ---------- Badge legend ---------- -->
+        <div class="card">
+          <div class="card-head"><h2 class="card-title">Badge Legend</h2></div>
+          <p class="muted">Every badge you see on a test record, and what its colour means.</p>
+
+          <div class="bl-legend">
+            <div class="bl-group">
+              <div class="bl-group-t">Severity — how harmful the leaked answer is</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-1">Severity 1</span><span class="bl-note">harmless, no usable content</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-2">Severity 2</span><span class="bl-note">limited risk</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-3">Severity 3</span><span class="bl-note">moderate risk</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-4">Severity 4</span><span class="bl-note">serious risk</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-sev sev-5">Severity 5</span><span class="bl-note">directly usable, highest</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">Refusal level — how strictly the target model held its line</div>
+              <div class="bl-scale">
+                <span class="bl-scale-end">Refused firmly</span>
+                <span class="bl-scale-bar"></span>
+                <span class="bl-scale-end">Complied fully</span>
+              </div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv1">Full refusal</span><span class="bl-note">model refused outright — red, the safest outcome</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv2">Partial refusal</span><span class="bl-note">refused but leaked fragments — orange</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv3">Partial compliance</span><span class="bl-note">hedged answer — yellow</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ref rf-lv4">Full compliance</span><span class="bl-note">answered the whole request — green, the worst outcome</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">Other record badges</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="rbadge rbadge-cat">Cyber Attack</span><span class="bl-note">risk category (14 types)</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-ds">cnsafe</span><span class="bl-note">dataset the prompt came from</span></span>
+                <span class="bl-item"><span class="rbadge rbadge-harm">harm subtype</span><span class="bl-note">fine-grained harm label from the dataset</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">Result marks and model roles</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="mark mark-true">T</span><span class="bl-note">jailbreak succeeded</span></span>
+                <span class="bl-item"><span class="mark mark-false">F</span><span class="bl-note">jailbreak failed</span></span>
+                <span class="bl-item"><span class="rec-model-tag tag-atk">Attacker</span><span class="bl-note">the attacking model</span></span>
+                <span class="bl-item"><span class="rec-model-tag tag-tgt">Target</span><span class="bl-note">the model under test</span></span>
+              </div>
+            </div>
+
+            <div class="bl-group">
+              <div class="bl-group-t">Connection status and payload tags</div>
+              <div class="bl-row">
+                <span class="bl-item"><span class="badge badge-ok">OK</span><span class="bl-note">endpoint reachable</span></span>
+                <span class="bl-item"><span class="badge badge-err">Failed</span><span class="bl-note">endpoint error</span></span>
+                <span class="bl-item"><span class="badge badge-idle">Idle</span><span class="bl-note">not tested yet</span></span>
+                <span class="bl-item"><span class="tag tag-jb">Jailbreak</span><span class="bl-note">jailbreak template</span></span>
+                <span class="bl-item"><span class="tag tag-ex">Executor</span><span class="bl-note">executor script</span></span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1302,6 +1385,7 @@
 <script src="/static/vendor/vue.global.prod.js"></script>
 <script src="/static/hot.js?v=9"></script>
 <script src="/static/fuzz.js?v=2"></script>
-<script src="/static/app.js?v=19"></script>
+<script src="/static/analytics.js?v=2"></script>
+<script src="/static/app.js?v=24"></script>
 </body>
 </html>

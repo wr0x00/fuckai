@@ -8,7 +8,8 @@
     converters.py    规则/LLM 两种 prompt 变换器
     scorer.py        True/False 越狱判定评分器
     memory.py        SQLite 会话记录
+    analyzer.py      多维分析聚合统计（矩阵 / 雷达图 / 总览）
     orchestrator.py  攻击管线编排
     updater.py       GitHub 自动更新
 """
-__version__ = "0.2.0"
+__version__ = "26.11.17"

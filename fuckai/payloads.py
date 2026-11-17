@@ -25,8 +25,10 @@ LOCAL_GROUP_INTROS = {
     ".": "AdvBench 有害行为基准(520条) + 系统提示窃取探针",
     "0din": "OWASP 0Din 注入载荷：占位符注入、表格补全诱导",
     "airt": "AIRT 分类话题：非法/恶意软件/信息泄露/诈骗/暴力等 15 类",
+    "cnsafe": "CNSafe 国内合规评测集(3000条)：TC260-003 五大类 30 小类，国产模型送测必答题",
     "examples": "多模态/多轮会话攻击示例话题",
     "garak": "LLM 探针：命令注入/XSS/包幻觉/系统提示提取",
+    "safebench": "SafeBench 学术越狱评测集(2300条)：23 个安全类别，规模最大的公开越狱集",
 }
 
 
@@ -42,6 +44,8 @@ class Payload:
     name: str            # 显示名
     value: str           # objective 文本 或 模板全文（含 {{ 参数 }} 占位符）
     harm: str = ""       # harm_categories
+    harm_major: str = ""  # 上位风险大类（数据集自带的大类标注，可为空）
+    dataset: str = ""    # 所属数据集名（多维矩阵的 dataset 维度）
     params: list = field(default_factory=list)   # 模板参数（objective 类为空）
 
     @property
@@ -85,7 +89,9 @@ def _parse_seed_file(path: Path, rel: str) -> list[Payload]:
             continue
         harm = ", ".join(seed.get("harm_categories") or [])
         out.append(Payload(kind="objective", source=rel, name=ds_name,
-                           value=str(seed["value"]).strip(), harm=harm))
+                           value=str(seed["value"]).strip(), harm=harm,
+                           harm_major=str(seed.get("category_major") or "").strip(),
+                           dataset=ds_name))
     return out
 
 

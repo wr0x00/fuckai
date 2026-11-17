@@ -3,6 +3,8 @@
 
 本程序 把每轮 PromptRequest/Response 写进 SQLite，供多轮攻击、事后分析、
 报告导出使用。这里每次攻击一行，v2 新增 payload 列（记录所用的越狱模板）。
+
+这里只管存，不管算：多维聚合统计在 fuckai/analyzer.py。
 """
 import json
 import sqlite3
@@ -24,9 +26,32 @@ CREATE TABLE IF NOT EXISTS attacks (
     attack_model TEXT,
     attack_url   TEXT,
     target_model TEXT,
-    target_url   TEXT
+    target_url   TEXT,
+    severity     INTEGER DEFAULT 0,
+    category     TEXT DEFAULT '',
+    refusal_level TEXT DEFAULT '',
+    evidence     TEXT DEFAULT '',
+    dataset      TEXT DEFAULT '',
+    harm         TEXT DEFAULT '',
+    harm_major   TEXT DEFAULT ''
 );
 """
+
+# 多维评分新增列（老库自动补）
+_EXTRA_COLS = {
+    "severity": "INTEGER DEFAULT 0",
+    "category": "TEXT DEFAULT ''",
+    "refusal_level": "TEXT DEFAULT ''",
+    "evidence": "TEXT DEFAULT ''",
+    "dataset": "TEXT DEFAULT ''",
+    "harm": "TEXT DEFAULT ''",
+    "harm_major": "TEXT DEFAULT ''",
+}
+
+_SELECT_FIELDS = ("id", "ts", "converter", "payload", "objective", "prompt", "response",
+                   "success", "reason", "attack_model", "attack_url", "target_model",
+                   "target_url", "severity", "category", "refusal_level", "evidence",
+                   "dataset", "harm", "harm_major")
 
 
 class Memory:
@@ -47,14 +72,19 @@ class Memory:
             for col in ("attack_model", "attack_url", "target_model", "target_url"):
                 if col not in cols:
                     self.conn.execute(f"ALTER TABLE attacks ADD COLUMN {col} TEXT")
+            # 兼容老库：补多维评分列（severity / category / refusal_level / evidence / dataset / harm）
+            for col, decl in _EXTRA_COLS.items():
+                if col not in cols:
+                    self.conn.execute(f"ALTER TABLE attacks ADD COLUMN {col} {decl}")
             self.conn.commit()
 
     def save(self, record: dict) -> int:
         with self._lock:
             cur = self.conn.execute(
                 "INSERT INTO attacks (ts, converter, objective, payload, prompt, response, success, reason, "
-                "attack_model, attack_url, target_model, target_url) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "attack_model, attack_url, target_model, target_url, severity, category, "
+                "refusal_level, evidence, dataset, harm, harm_major) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.get("ts") or datetime.now().isoformat(timespec="seconds"),
                     record["converter"],
@@ -68,6 +98,13 @@ class Memory:
                     record.get("attack_url", ""),
                     record.get("target_model", ""),
                     record.get("target_url", ""),
+                    int(record.get("severity") or 0),
+                    record.get("category", ""),
+                    record.get("refusal_level", ""),
+                    record.get("evidence", ""),
+                    record.get("dataset", ""),
+                    record.get("harm", ""),
+                    record.get("harm_major", ""),
                 ),
             )
             self.conn.commit()
@@ -76,24 +113,24 @@ class Memory:
     def recent(self, limit: int = 20) -> list[dict]:
         with self._lock:
             cur = self.conn.execute(
-                "SELECT id, ts, converter, payload, objective, success, reason, "
-                "attack_model, attack_url, target_model, target_url FROM attacks "
+                "SELECT " + ", ".join(_SELECT_FIELDS) + " FROM attacks "
                 "ORDER BY id DESC LIMIT ?", (limit,),
             )
-            return [dict(zip(("id", "ts", "converter", "payload", "objective", "success", "reason",
-                              "attack_model", "attack_url", "target_model", "target_url"), row))
-                    for row in cur.fetchall()]
+            return [dict(zip(_SELECT_FIELDS, row)) for row in cur.fetchall()]
 
     def all(self) -> list[dict]:
         with self._lock:
             cur = self.conn.execute(
-                "SELECT id, ts, converter, payload, objective, prompt, response, success, reason, "
-                "attack_model, attack_url, target_model, target_url "
-                "FROM attacks ORDER BY id"
+                "SELECT " + ", ".join(_SELECT_FIELDS) + " FROM attacks ORDER BY id"
             )
-            keys = ("id", "ts", "converter", "payload", "objective", "prompt", "response", "success",
-                    "reason", "attack_model", "attack_url", "target_model", "target_url")
-            return [dict(zip(keys, row)) for row in cur.fetchall()]
+            return [dict(zip(_SELECT_FIELDS, row)) for row in cur.fetchall()]
+
+    def delete(self, rid: int) -> int:
+        """删除单条记录，返回删除行数（0 表示不存在）。"""
+        with self._lock:
+            cur = self.conn.execute("DELETE FROM attacks WHERE id = ?", (rid,))
+            self.conn.commit()
+            return cur.rowcount
 
     def clear(self) -> int:
         """清空全部记录，返回删除行数。"""
@@ -114,11 +151,17 @@ class Memory:
         with open(path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(("id", "ts", "converter", "payload", "objective", "success",
-                             "reason", "attack_model", "attack_url", "target_model", "target_url",
+                             "reason", "severity", "category", "refusal_level", "evidence",
+                             "dataset", "harm", "harm_major",
+                             "attack_model", "attack_url", "target_model", "target_url",
                              "prompt", "response"))
             for r in records:
                 writer.writerow((r["id"], r["ts"], r["converter"], r["payload"], r["objective"],
-                                 r["success"], r["reason"], r["attack_model"], r["attack_url"],
+                                 r["success"], r["reason"], r.get("severity", 0),
+                                 r.get("category", ""), r.get("refusal_level", ""),
+                                 r.get("evidence", ""), r.get("dataset", ""), r.get("harm", ""),
+                                 r.get("harm_major", ""),
+                                 r["attack_model"], r["attack_url"],
                                  r["target_model"], r["target_url"], r["prompt"], r["response"]))
         return len(records)
 
