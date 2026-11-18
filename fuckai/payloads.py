@@ -47,6 +47,7 @@ class Payload:
     harm_major: str = ""  # 上位风险大类（数据集自带的大类标注，可为空）
     dataset: str = ""    # 所属数据集名（多维矩阵的 dataset 维度）
     params: list = field(default_factory=list)   # 模板参数（objective 类为空）
+    intro: str = ""      # 简介（YAML 的 description 字段），前端列表悬停展示
 
     @property
     def is_template(self) -> bool:
@@ -83,6 +84,7 @@ def _parse_seed_file(path: Path, rel: str) -> list[Payload]:
     if not isinstance(data, dict) or not data.get("seeds"):
         return []
     ds_name = data.get("dataset_name") or path.stem
+    file_intro = str(data.get("description") or "").strip()
     out = []
     for seed in data["seeds"]:
         if not isinstance(seed, dict) or not seed.get("value"):
@@ -91,7 +93,8 @@ def _parse_seed_file(path: Path, rel: str) -> list[Payload]:
         out.append(Payload(kind="objective", source=rel, name=ds_name,
                            value=str(seed["value"]).strip(), harm=harm,
                            harm_major=str(seed.get("category_major") or "").strip(),
-                           dataset=ds_name))
+                           dataset=ds_name,
+                           intro=str(seed.get("description") or "").strip() or file_intro))
     return out
 
 
@@ -155,6 +158,7 @@ class PayloadLibrary:
                 name=data.get("name") or path.stem,
                 value=str(data["value"]),
                 params=data.get("parameters") or [],
+                intro=str(data.get("description") or "").strip(),
             ))
         return items
 

@@ -1,10 +1,10 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fuckai — LLM 注入攻击测试台</title>
-<link rel="stylesheet" href="/static/styles.css?v=32">
+<link rel="stylesheet" href="/static/styles.css?v=33">
 <script>
 /* 语言守卫：localStorage 选择的不是中文时跳回英文版 */
 (function () {
@@ -245,7 +245,7 @@
           <div class="card-head"><h2 class="card-title">变换器</h2>
             <span class="card-note">编码 / 改写手法，决定 prompt 如何变形</span></div>
           <div class="conv-grid">
-            <div class="conv" v-for="c in filteredConverters" :key="c.id">
+            <div class="conv" v-for="c in filteredConverters" :key="c.id" :data-tip="c.intro">
               <code class="conv-id">{{ c.id }}</code>
               <span class="conv-label">{{ c.label }}</span>
             </div>
@@ -257,7 +257,7 @@
           <div class="card-head"><h2 class="card-title">{{ arsenalTab==='tpl' ? '提示词模板与执行器话术' : '' }}</h2>
             <span class="card-note">点击查看模板全文</span></div>
           <div class="tpl-grid">
-            <div class="tpl" v-for="p in filteredTemplates" :key="p.kind + p.name">
+            <div class="tpl" v-for="p in filteredTemplates" :key="p.kind + p.name" :data-tip="p.intro">
               <div class="tpl-top">
                 <span class="tpl-name">{{ p.name }}</span>
                 <span class="tag" :class="p.kind==='jailbreak' ? 'tag-jb' : 'tag-ex'">{{ p.kind==='jailbreak'?'越狱':'执行器' }}</span>
@@ -280,7 +280,7 @@
                 <span class="grp-count">{{ g.count }} 条</span>
               </summary>
               <div class="grp-items">
-                <div class="grp-item" v-for="(it,i) in g.items" :key="i">
+                <div class="grp-item" v-for="(it,i) in g.items" :key="i" :data-tip="it.intro">
                   <span class="mono muted grp-idx">{{ i+1 }}</span>
                   <span>{{ it.value }}</span>
                   <span class="tag tag-harm" v-if="it.harm">{{ it.harm }}</span>
@@ -730,7 +730,7 @@
               <span class="field-label">话题来源</span>
               <select class="input" v-model="atk.objective_group" @change="atk.sample_size = Math.min(atk.sample_size, 50)">
                 <option value="">手动输入（下方）</option>
-                <option v-for="g in arsenal.local_groups" :key="g.key" :value="g.key">{{ g.key }} — {{ g.count }} 条</option>
+                <option v-for="g in arsenal.local_groups" :key="g.key" :value="g.key" :title="g.intro">{{ g.key }} — {{ g.count }} 条</option>
               </select>
             </label>
 
@@ -752,6 +752,7 @@
               <div class="chipbox">
                 <button class="chip" v-for="c in arsenal.converters" :key="c.id"
                         :class="{on: atk.converter_ids.includes(c.id)}"
+                        :data-tip="c.intro"
                         @click="toggleConv(c.id)">{{ c.id }}</button>
               </div>
             </div>
@@ -770,6 +771,7 @@
                   <span class="tpk-name">不包装（话题直接发送）</span>
                 </button>
                 <button class="tpk-item" v-for="p in payloadMatches" :key="p.kind + '|' + p.name"
+                        :data-tip="p.intro"
                         @mousedown.prevent @click="pickPayload(p.name)">
                   <span class="tpk-name" :title="p.name">{{ p.name }}</span>
                   <span class="tpk-kind" :class="p.kind === 'executor' ? 'tag-ex' : 'tag-jb'">{{ p.kind === 'executor' ? 'EX' : 'JB' }}</span>
@@ -1383,9 +1385,10 @@
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/tip.js?v=1"></script>
 <script src="/static/zh/hot.js?v=9"></script>
 <script src="/static/zh/fuzz.js?v=2"></script>
 <script src="/static/analytics.js?v=2"></script>
-<script src="/static/zh/app.js?v=24"></script>
+<script src="/static/zh/app.js?v=25"></script>
 </body>
 </html>

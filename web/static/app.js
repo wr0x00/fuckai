@@ -54,13 +54,39 @@ const EN = {
         math_word: 'Math word-problem framing',
         smiles: 'SMILES chemical-formula framing',
         mathprompt: 'MathPrompt: symbolic math encoding (inline {{prompt}} template)',
+        reverse_text: 'Reverse text (plugin)',
+        spaced_text: 'Spaced text (plugin)',
+        upper_text: 'Uppercase text (plugin)',
     },
     local_groups: {
         '.': 'AdvBench harmful-behavior benchmark (520 items) + system-prompt extraction probes',
         '0din': 'OWASP 0Din injection payloads: placeholder injection, table-completion lures',
         airt: 'AIRT categorized topics: illegal / malware / info-leak / fraud / violence etc., 15 classes',
+        cnsafe: 'Chinese safety benchmark topics: illegal & dangerous requests, privacy, discrimination',
         examples: 'Multimodal / multi-turn conversation attack sample topics',
         garak: 'LLM probes: command injection / XSS / package hallucination / system-prompt extraction',
+        safebench: 'SafeBench topics: illegal activity / fraud / privacy / ethics / off-topic probes',
+    },
+    converter_intros: {
+        direct: 'Send the topic untouched, used as the control-group baseline.',
+        base64: 'Base64-encodes the request and asks the target to decode it, bypassing plain-text keyword filters.',
+        rot13: 'Applies ROT13 letter rotation to scatter keyword matching.',
+        atbash: 'Atbash cipher (reversed alphabet) with a decoding instruction template.',
+        caesar: 'Caesar cipher (shift 3) with a decoding instruction template.',
+        morse: 'Morse code encoding with a decoding instruction template.',
+        tense: 'Rewrites the topic into past tense, weakening the refusal trigger (arXiv:2407.11969).',
+        tone: 'Rewrites the topic in a different tone / register.',
+        translation: 'Translates the topic into Low German, a low-resource language with weaker alignment.',
+        variation: 'Generates paraphrase variants of the topic and sends one of them.',
+        academic: 'Reframes the topic as a homework / exam question.',
+        research: 'Reframes the topic as a research question or hypothesis.',
+        technical: 'Reframes the topic in dense technical jargon.',
+        math_word: 'Reframes the topic as a math word problem.',
+        smiles: 'Reframes the topic as a SMILES chemical formula task.',
+        mathprompt: 'MathPrompt symbolic math encoding using the inline {{prompt}} template.',
+        reverse_text: 'Reverses the characters of the topic to break keyword matching.',
+        spaced_text: 'Inserts spaces between characters to break keyword matching.',
+        upper_text: 'Uppercases the topic to break case-sensitive keyword matching.',
     },
     categories: {
         code_content: 'Code & review injection',
@@ -262,8 +288,10 @@ const EN = {
 };
 
 function applyEnArsenal(a) {
-    for (const c of a.converters || [])
+    for (const c of a.converters || []) {
         if (EN.converters[c.id]) c.label = EN.converters[c.id];
+        if (EN.converter_intros[c.id]) c.intro = EN.converter_intros[c.id];
+    }
     for (const g of a.local_groups || [])
         if (EN.local_groups[g.key]) g.intro = EN.local_groups[g.key];
 }

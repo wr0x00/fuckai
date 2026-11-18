@@ -29,6 +29,7 @@ from fuckai.client import ChatClient
 from fuckai.config import load_config
 from fuckai.converters import list_converters
 from fuckai.orchestrator import DEFAULT_CONCURRENCY, AttackCancelled, Orchestrator
+from fuckai.operators import load_plugins
 from fuckai.payloads import Payload, PayloadLibrary, local_group_intro
 from fuckai.workbench import Workbench
 from web.fuzz_routes import build_router
@@ -40,6 +41,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 app = FastAPI(title="fuckai Web", version="1.0", docs_url="/api/docs", redoc_url=None)
+
+# 加载 plugins/ 目录下的外部算子插件（插件可覆盖同名内置算子）
+load_plugins()
 
 _lib: PayloadLibrary | None = None
 _orch: Orchestrator | None = None
@@ -904,6 +908,7 @@ def _payload_brief(p: Payload) -> dict:
         "harm": p.harm,
         "harm_major": p.harm_major,
         "dataset": p.dataset,
+        "intro": p.intro,
     }
 
 
@@ -925,7 +930,7 @@ def arsenal() -> dict:
         "local_groups": local,
         "jailbreaks": [_payload_brief(p) for p in lib.jailbreaks()],
         "executors": [_payload_brief(p) for p in lib.executors()],
-        "converters": [{"id": cid, "label": label} for cid, label in list_converters()],
+        "converters": list_converters(),
     }
 
 
