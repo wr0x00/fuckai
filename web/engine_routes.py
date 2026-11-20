@@ -50,19 +50,29 @@ class ResizeBody(BaseModel):
     dpr: float | None = None
 
 
+class EnabledBody(BaseModel):
+    enabled: bool
+
+
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/api/engine")
 
     @router.get("/status")
     async def status() -> dict:
         url = ""
-        if engine.ready:
+        if engine.enabled and engine.ready:
             try:
                 url = await engine.current_url()
             except Exception:
                 pass
-        return {"ready": engine.ready, "url": url, "frame_seq": engine.frame_seq,
+        return {"enabled": engine.enabled, "ready": engine.ready, "url": url,
+                "frame_seq": engine.frame_seq,
                 "clients": engine.clients}
+
+    @router.post("/enabled")
+    async def set_enabled(body: EnabledBody) -> dict:
+        await engine.set_enabled(body.enabled)
+        return {"enabled": engine.enabled, "ready": engine.ready}
 
     @router.get("/url")
     async def url() -> dict:
@@ -80,6 +90,8 @@ def build_router() -> APIRouter:
                 boundary = b"--frame\r\n"
                 last_seq = -1
                 while True:
+                    if not engine.enabled:
+                        break
                     # 事件驱动：内核重绘才推帧，静止页面零开销
                     frame, seq = await engine.wait_frame(0.5)
                     if seq != last_seq and frame:
@@ -183,6 +195,8 @@ def build_router() -> APIRouter:
         try:
             await engine.page()  # 引擎被闲置回收后按需拉起（恢复上次访问页）
             while True:
+                if not engine.enabled:
+                    break
                 frame, seq = await engine.wait_frame(0.25)
                 if seq != last_seq and frame:
                     newest = await engine.latest_frame()

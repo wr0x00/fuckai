@@ -21,6 +21,7 @@
     Memory.save()                 ← 落盘 SQLite，可导出报告
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import copy
 from datetime import datetime
 from threading import Event
 
@@ -150,10 +151,18 @@ class Orchestrator:
         timeout: 覆盖单请求超时秒数（None=用构造时的默认值）。
         被取消时抛出 AttackCancelled。
         """
+        runner = self
         if timeout is not None and timeout > 0:
-            # 两个客户端共享本次运行的超时设置
-            self.attack_client.timeout = timeout
-            self.target_client.timeout = timeout
+            # 每个批次使用独立客户端，避免并发请求互相覆盖超时配置。
+            runner = copy(self)
+            runner.attack_client = copy(self.attack_client)
+            runner.target_client = copy(self.target_client)
+            runner.attack_client.timeout = timeout
+            runner.target_client.timeout = timeout
+            runner.converter = copy(self.converter)
+            runner.converter.attack = runner.attack_client
+            runner.scorer = copy(self.scorer)
+            runner.scorer.judge = runner.attack_client
         items = []
         for o in objectives:
             if isinstance(o, dict):
@@ -169,7 +178,7 @@ class Orchestrator:
         def _one(objective, cid, meta):
             if cancel is not None and cancel.is_set():
                 return None  # 已取消：跳过未开始的任务
-            return self.run(objective, cid, payload=payload, verbose=False, meta=meta)
+            return runner.run(objective, cid, payload=payload, verbose=False, meta=meta)
 
         if verbose:
             pl = f" 提示词模板={payload.name}" if payload else ""
@@ -184,7 +193,7 @@ class Orchestrator:
                     rec = fut.result()
                 except Exception as e:  # 单项异常不拖垮整批
                     o, c, m = futures[fut]
-                    rec = self._fail(c, o, payload, f"[异常] {e}", verbose=False, meta=m)
+                    rec = runner._fail(c, o, payload, f"[异常] {e}", verbose=False, meta=m)
                 if progress is not None:
                     try:
                         progress(done, total, rec)

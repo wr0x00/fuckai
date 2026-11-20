@@ -196,11 +196,11 @@ def get_config() -> dict:
     update = raw.get("update") or {}
     return {
         "attack_base_url": attack.get("base_url", "") or "",
-        "attack_api_key": attack.get("api_key", "") or "",
+        "attack_api_key": "",
         "attack_model": attack.get("model", "") or "",
         "attack_temperature": float(attack.get("temperature", 0.7) or 0.7),
         "target_base_url": target.get("base_url", "") or "",
-        "target_api_key": target.get("api_key", "") or "",
+        "target_api_key": "",
         "target_model": target.get("model", "") or "",
         "target_temperature": float(target.get("temperature", 0.0) or 0.0),
         "timeout": int(atk.get("timeout", 120) or 120),
@@ -309,6 +309,16 @@ def _model_dict(raw: dict) -> dict:
     }
 
 
+def _public_model(model: dict) -> dict:
+    public = {key: value for key, value in model.items() if key != "api_key"}
+    public["has_api_key"] = bool(model.get("api_key"))
+    return public
+
+
+def _public_session(session: dict) -> dict:
+    return {key: value for key, value in session.items() if key != "api_key"}
+
+
 def _ensure_models() -> tuple[list[dict], str, str]:
     """读取模型列表；首次使用时把旧的 attack_model / target_model 段迁移进来。"""
     raw = _read_config_raw()
@@ -365,7 +375,8 @@ def _save_models(models: list[dict], attack_id: str, target_id: str) -> None:
 @app.get("/api/models")
 def list_models() -> dict:
     models, attack_id, target_id = _ensure_models()
-    return {"models": models, "attack_id": attack_id, "target_id": target_id}
+    return {"models": [_public_model(m) for m in models],
+            "attack_id": attack_id, "target_id": target_id}
 
 
 @app.post("/api/models")
@@ -382,11 +393,14 @@ def save_model(item: ModelItem) -> dict:
     }
     idx = next((i for i, m in enumerate(models) if m["id"] == mid), -1)
     if idx >= 0:
+        if not entry["api_key"]:
+            entry["api_key"] = models[idx]["api_key"]
         models[idx] = entry
     else:
         models.append(entry)
     _save_models(models, attack_id, target_id)
-    return {"ok": True, "models": models, "attack_id": attack_id, "target_id": target_id}
+    return {"ok": True, "models": [_public_model(m) for m in models],
+            "attack_id": attack_id, "target_id": target_id}
 
 
 @app.delete("/api/models/{mid}")
@@ -398,7 +412,8 @@ def delete_model(mid: str) -> dict:
     if target_id == mid:
         target_id = ""
     _save_models(models, attack_id, target_id)
-    return {"ok": True, "models": models, "attack_id": attack_id, "target_id": target_id}
+    return {"ok": True, "models": [_public_model(m) for m in models],
+            "attack_id": attack_id, "target_id": target_id}
 
 
 @app.post("/api/models/role")
@@ -418,7 +433,8 @@ def set_model_role(req: ModelRoleRequest) -> dict:
         if target_id == req.id:
             target_id = ""
     _save_models(models, attack_id, target_id)
-    return {"ok": True, "models": models, "attack_id": attack_id, "target_id": target_id}
+    return {"ok": True, "models": [_public_model(m) for m in models],
+            "attack_id": attack_id, "target_id": target_id}
 
 
 def _resolve_model(req: ModelItem) -> dict:
@@ -602,7 +618,6 @@ def create_chat_session(req: ChatSessionCreate) -> dict:
         "model_id": req.model_id,
         "model_name": req.model_name,
         "base_url": req.base_url,
-        "api_key": req.api_key,
         "model": req.model,
         "created_at": now,
         "updated_at": now,
@@ -612,14 +627,14 @@ def create_chat_session(req: ChatSessionCreate) -> dict:
         sessions = _load_chat_sessions()
         sessions.append(s)
         _save_chat_sessions(sessions)
-    return {"ok": True, "session": s}
+    return {"ok": True, "session": _public_session(s)}
 
 
 @app.get("/api/chat/sessions/{sid}")
 def get_chat_session(sid: str) -> dict:
     for s in _load_chat_sessions():
         if s.get("id") == sid:
-            return {"ok": True, "session": s}
+            return {"ok": True, "session": _public_session(s)}
     raise HTTPException(status_code=404, detail="会话不存在")
 
 
@@ -1458,16 +1473,6 @@ app.include_router(build_engine_router())
 
 # MCP（Model Context Protocol）路由：服务器配置 / 连接 / 工具列表 / 工具调用
 app.include_router(build_mcp_router())
-
-
-@app.on_event("startup")
-async def _warm_engine():
-    """服务启动即后台预热内嵌浏览器引擎，用户点开面板时页面已加载完成。"""
-    import asyncio as _asyncio
-
-    from fuckai.browser_engine import engine
-
-    _asyncio.create_task(engine.page())
 
 
 @app.on_event("shutdown")

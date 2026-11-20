@@ -15,6 +15,7 @@
         VIEW_H = 800;
 
     window.HotPanel = {
+        props: { enabled: { type: Boolean, default: false } },
         template: `
 <div class="card hot-card">
   <div class="hot-toolbar">
@@ -46,7 +47,7 @@
                 input: DEFAULT_URL,
                 realUrl: DEFAULT_URL,
                 textInput: '',
-                hint: '引擎启动中…',
+                hint: '',
                 urlTimer: null,
                 lastWheel: 0,
                 viewW: VIEW_W,
@@ -69,21 +70,50 @@
                 this._rsT = setTimeout(this.doResize, 150);
             });
             if (this.$refs.viewport) this.ro.observe(this.$refs.viewport);
-            this.urlTimer = setInterval(this.syncUrl, 1500);
-            requestAnimationFrame(this.drawLoop);
-            if (!this._hidden) this.connectWs();
+            if (this.enabled) this.startEngineView();
         },
         beforeUnmount() {
             if (this.urlTimer) clearInterval(this.urlTimer);
             if (this.ro) this.ro.disconnect();
             clearTimeout(this._rsT);
             this._closed = true;
+            if (this._rafId) cancelAnimationFrame(this._rafId);
             try { this.ws && this.ws.close(); } catch (e) { /* 静默 */ }
+        },
+        watch: {
+            enabled(on) {
+                if (on) this.startEngineView();
+                else this.stopEngineView();
+            },
         },
         methods: {
             // ---------- 画面：WS 接帧 + rAF 绘制 ----------
+            startEngineView() {
+                this._closed = false;
+                this.hint = '引擎启动中…';
+                if (!this.urlTimer) this.urlTimer = setInterval(this.syncUrl, 1500);
+                this.doResize();
+                if (!this._hidden) this.connectWs();
+                if (!this._rafId) this.drawLoop();
+            },
+            stopEngineView() {
+                this._closed = true;
+                this.hint = 'AI Safety HOT 已关闭';
+                if (this.urlTimer) clearInterval(this.urlTimer);
+                this.urlTimer = null;
+                if (this._rafId) cancelAnimationFrame(this._rafId);
+                this._rafId = null;
+                try { this.ws && this.ws.close(); } catch (e) { /* 静默 */ }
+                this.ws = null;
+                for (const bmp of [this._latest, this._drawn, this._lastBmp]) {
+                    if (bmp && bmp.close) bmp.close();
+                }
+                this._latest = this._drawn = this._lastBmp = null;
+                const canvas = this.$refs.streamCanvas;
+                if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            },
             connectWs() {
-                if (this._closed || this._hidden) return;
+                if (!this.enabled || this._closed || this._hidden) return;
                 try { this.ws && this.ws.close(); } catch (e) { /* 静默 */ }
                 const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
                 this.ws = new WebSocket(proto + location.host + '/api/engine/ws');
@@ -109,7 +139,11 @@
                 };
             },
             drawLoop() {
-                requestAnimationFrame(this.drawLoop);
+                if (!this.enabled || this._closed) {
+                    this._rafId = null;
+                    return;
+                }
+                this._rafId = requestAnimationFrame(this.drawLoop);
                 const bmp = this._latest;
                 if (!bmp || bmp === this._drawn) return;
                 const cv = this.$refs.streamCanvas;
@@ -148,6 +182,11 @@
                 }
             },
             async syncUrl() {
+                if (!this.enabled) {
+                    this._hidden = false;
+                    this.hint = 'AI Safety HOT 已关闭';
+                    return;
+                }
                 try {
                     const r = await fetch('/api/engine/url');
                     const j = await r.json();
@@ -190,6 +229,7 @@
                     try { this.ws && this.ws.close(); } catch (e) { /* 静默 */ }
                     return;
                 }
+                if (!this.enabled) return;
                 if (this._hidden) {
                     // 切回面板：重连画面（引擎若已回收会按需拉起）
                     this._hidden = false;

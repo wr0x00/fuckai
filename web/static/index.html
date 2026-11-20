@@ -33,12 +33,20 @@
     </div>
 
     <nav class="nav-list">
-      <button v-for="it in navItems" :key="it.key" class="nav-item" :class="{active: page===it.key}"
-              @click="page=it.key" :title="it.label">
-        <span class="nav-ico" v-html="it.icon"></span>
-        <span class="nav-label">{{ it.label }}</span>
-        <span class="nav-badge" v-if="it.badge && it.badge()">{{ it.badge() }}</span>
-      </button>
+      <div v-for="it in navItems" :key="it.key" class="nav-row">
+        <button class="nav-item" :class="{active: page===it.key}"
+                @click="page=it.key" :title="it.label">
+          <span class="nav-ico" v-html="it.icon"></span>
+          <span class="nav-label">{{ it.label }}</span>
+          <span class="nav-badge" v-if="it.badge && it.badge()">{{ it.badge() }}</span>
+        </button>
+        <button v-if="it.key==='hot'" class="nav-hot-switch" :class="{on: hotEnabled}"
+                role="switch" :aria-checked="hotEnabled" :aria-label="hotEnabled ? 'Disable AI Safety HOT' : 'Enable AI Safety HOT'"
+                :title="hotEnabled ? 'Disable AI Safety HOT' : 'Enable AI Safety HOT'"
+                :disabled="hotBusy" @click.stop="toggleHot">
+          <span class="nav-hot-track"><span></span></span>
+        </button>
+      </div>
     </nav>
 
     <div class="nav-foot">
@@ -911,7 +919,7 @@
                 </div>
                 <div class="mrow-line">
                   <span class="mrow-k">Key</span>
-                  <span class="mono muted">{{ maskKey(m.api_key) }}</span>
+                  <span class="mono muted">{{ m.has_api_key ? 'Configured' : 'Not configured' }}</span>
                 </div>
                 <div class="mrow-line">
                   <span class="mrow-k">Temp</span>
@@ -1041,7 +1049,7 @@
 
       <!-- ---------- Curated resources ---------- -->
       <!-- ---------- AI Safety HOT (embedded browser) ---------- -->
-      <hot-panel v-show="page==='hot'"></hot-panel>
+      <hot-panel v-show="page==='hot'" :enabled="hotEnabled"></hot-panel>
 
       <section v-show="page==='resources'" class="page">
         <div class="card">

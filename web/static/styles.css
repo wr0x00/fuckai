@@ -176,6 +176,12 @@ body {
     overflow-y: auto;
 }
 
+.nav-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .nav-item {
     display: flex;
     align-items: center;
@@ -192,6 +198,62 @@ body {
     text-align: left;
     position: relative;
     transition: background .13s ease, color .13s ease;
+}
+
+.nav-row .nav-item {
+    flex: 1;
+    min-width: 0;
+}
+
+.nav-hot-switch {
+    width: 34px;
+    height: 24px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.nav-hot-switch:disabled {
+    cursor: wait;
+    opacity: .6;
+}
+
+.nav-hot-track {
+    width: 28px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--border);
+    transition: background .16s ease;
+}
+
+.nav-hot-track span {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: 0 1px 2px #0003;
+    transition: transform .16s ease;
+}
+
+.nav-hot-switch.on .nav-hot-track {
+    background: var(--brand);
+}
+
+.nav-hot-switch.on .nav-hot-track span {
+    transform: translateX(12px);
+}
+
+.nav-hot-switch:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
 }
 
 .nav-item:hover {
@@ -2587,6 +2649,10 @@ html[data-theme="dark"] .hot-stream {
     .nav-item {
         justify-content: center;
         padding: 11px 0;
+    }
+    .nav-hot-switch {
+        width: 28px;
+        transform: scale(.85);
     }
     .grid-tiles {
         grid-template-columns: 1fr;

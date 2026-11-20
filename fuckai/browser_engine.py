@@ -71,6 +71,16 @@ class BrowserEngine:
         self._last_used = time.time()
         self._last_url: str | None = None
         self._watchdog_started = False
+        self._enabled = True
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    async def set_enabled(self, enabled: bool) -> None:
+        self._enabled = bool(enabled)
+        if not self._enabled:
+            await self.shutdown()
 
     @property
     def ready(self) -> bool:
@@ -191,6 +201,8 @@ class BrowserEngine:
     async def page(self):
         """拿到可用页面；首次调用会启动 Chromium 并打开默认站点。"""
         async with self._lock:
+            if not self._enabled:
+                raise RuntimeError("AI Safety HOT is disabled")
             if self._page is not None and not self._page.is_closed():
                 return self._page
             if self._pw is None:
@@ -318,23 +330,29 @@ class BrowserEngine:
         return page.url
 
     async def shutdown(self) -> None:
-        for closer in (self._context, self._browser):
-            if closer is None:
-                continue
-            try:
-                await closer.close()
-            except Exception:
-                pass
-        self._page = None
-        self._context = None
-        self._browser = None
-        self._cdp = None
-        if self._pw is not None:
-            try:
-                await self._pw.stop()
-            except Exception:
-                pass
-            self._pw = None
+        async with self._lock:
+            if self._page is not None and not self._page.is_closed():
+                self._last_url = self._page.url
+            for closer in (self._context, self._browser):
+                if closer is None:
+                    continue
+                try:
+                    await closer.close()
+                except Exception:
+                    pass
+            self._page = None
+            self._context = None
+            self._browser = None
+            self._cdp = None
+            self._frame = b""
+            self._frame_seq = 0
+            self._frame_event.clear()
+            if self._pw is not None:
+                try:
+                    await self._pw.stop()
+                except Exception:
+                    pass
+                self._pw = None
 
 
 engine = BrowserEngine()

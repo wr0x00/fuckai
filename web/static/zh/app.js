@@ -140,6 +140,8 @@ createApp({
             resources: { projects: [], articles: [] },
             navW: parseInt(localStorage.getItem('fuckai-nav-w'), 10) || 236,
             navResizing: false,
+            hotEnabled: false,
+            hotBusy: false,
             records: { total: 0, success: 0, rate: 0, items: [] },
             cfg: {
                 attack_base_url: '',
@@ -451,6 +453,7 @@ createApp({
 
     created() {
         this.applyTheme();
+        this.loadHotStatus();
         this.loadAll();
         this.loadWorkbench();
     },
@@ -482,6 +485,32 @@ createApp({
                 throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
             }
             return data;
+        },
+
+        async loadHotStatus() {
+            try {
+                const status = await this.api('/api/engine/status');
+                this.hotEnabled = !!status.enabled;
+            } catch (e) {
+                this.hotEnabled = false;
+            }
+        },
+
+        async toggleHot() {
+            if (this.hotBusy) return;
+            this.hotBusy = true;
+            try {
+                const result = await this.api('/api/engine/enabled', {
+                    method: 'POST',
+                    body: JSON.stringify({ enabled: !this.hotEnabled }),
+                });
+                this.hotEnabled = !!result.enabled;
+                this.notify(this.hotEnabled ? 'AI Safety HOT 已启用' : 'AI Safety HOT 已关闭');
+            } catch (e) {
+                this.notify('AI Safety HOT 状态更新失败: ' + e.message, 'err');
+            } finally {
+                this.hotBusy = false;
+            }
         },
 
         async loadAll() {
@@ -708,7 +737,7 @@ createApp({
                 `名称: ${m.name}`,
                 `模型: ${m.model}`,
                 `Base URL: ${m.base_url}`,
-                `API Key: ${m.api_key}`,
+                `API Key: ${m.has_api_key ? '已配置' : '未配置'}`,
                 `Temperature: ${m.temperature}`,
             ].join('\n');
             await this.copyText(info);
@@ -778,12 +807,14 @@ createApp({
                 const sess = r.session || {};
                 this.chat.session_id = sess.id;
                 this.chat.messages = sess.messages || [];
-                if (sess.base_url) {
+                const savedModel = this.models.find(m => m.id === sess.model_id);
+                if (savedModel || sess.base_url) {
+                    const model = savedModel || sess;
                     this.chat.id = sess.model_id || '';
-                    this.chat.name = sess.model_name || this.chat.name;
-                    this.chat.base_url = sess.base_url;
-                    this.chat.api_key = sess.api_key || '';
-                    this.chat.model = sess.model || this.chat.model;
+                    this.chat.name = model.name || sess.model_name || this.chat.name;
+                    this.chat.base_url = model.base_url;
+                    this.chat.api_key = '';
+                    this.chat.model = model.model;
                 }
                 this.chat.sentText = '';
                 this.chatScroll();

@@ -23,3 +23,5 @@ fuzz_sessions.json
 
 # MCP 服务器配置（本地数据，含本机路径与环境变量）
 mcp_servers.json
+
+FUCKAI-LLM自身安全测试平台设计与思路.md
