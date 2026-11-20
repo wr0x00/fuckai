@@ -105,7 +105,7 @@
                 this._rafId = null;
                 try { this.ws && this.ws.close(); } catch (e) { /* 静默 */ }
                 this.ws = null;
-                for (const bmp of [this._latest, this._drawn, this._lastBmp]) {
+                for (const bmp of[this._latest, this._drawn, this._lastBmp]) {
                     if (bmp && bmp.close) bmp.close();
                 }
                 this._latest = this._drawn = this._lastBmp = null;
